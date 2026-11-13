@@ -18,7 +18,7 @@
 # https://ollama.com
 
 # 2. Клонуй репозиторій
-git clone https://github.com/1dimon/open-forge
+git clone https://github.com/Dimonchikk/Open-Forge
 cd open-forge
 
 # 3. Встанови залежності

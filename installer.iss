@@ -4,7 +4,7 @@
 #define AppName "Open Forge"
 #define AppVersion "1.0.0"
 #define AppPublisher "Dmytro Brychnyk"
-#define AppURL "https://github.com/1dimon/open-forge"
+#define AppURL "https://github.com/Dimonchikk/Open-Forge"
 #define AppExeName "OpenForge.exe"
 
 [Setup]
