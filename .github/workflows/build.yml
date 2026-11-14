@@ -33,6 +33,14 @@ jobs:
         run: |
           pip install -r requirements.txt pyinstaller
 
+      - name: Перевірити код
+        shell: powershell
+        run: |
+          # PyInstaller мовчки викидає модулі з помилками, тому перевіряємо заздалегідь.
+          python -m compileall -q main.py version.py ui core agent models_db
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python -c "import ui.theme, ui.hardware_panel, ui.catalog_view, ui.chat_view, ui.compare_view, ui.agent_view, core.ollama_client, core.hardware, agent.agent_core, models_db.catalog; print('imports ok')"
+
       - name: Зібрати програму
         shell: powershell
         run: |

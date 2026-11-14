@@ -72,9 +72,11 @@ class ChatView(ctk.CTkFrame):
         self._chat_box.pack(fill="both", expand=True, padx=16, pady=(10, 0))
 
         # configure text tags
-        self._chat_box.tag_config("user",    foreground=c("text_accent")[1], font=ctk.CTkFont(family="Inter", size=13, weight="bold"))
-        self._chat_box.tag_config("ai",      foreground=c("text")[1])
-        self._chat_box.tag_config("meta",    foreground=c("text_dim")[1], font=ctk.CTkFont(family="Inter", size=11))
+        # CTkTextbox.tag_config forbids `font`, so configure the inner tk.Text directly.
+        tb = self._chat_box._textbox
+        tb.tag_configure("user", foreground=c("text_accent")[1], font=("Inter", 13, "bold"))
+        tb.tag_configure("ai",   foreground=c("text")[1])
+        tb.tag_configure("meta", foreground=c("text_dim")[1], font=("Inter", 11))
 
         # input row
         input_frame = ctk.CTkFrame(self, fg_color="transparent")

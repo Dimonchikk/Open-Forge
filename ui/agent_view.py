@@ -99,7 +99,7 @@ class AgentView(ctk.CTkFrame):
         self._output = ctk.CTkTextbox(
             self,
             fg_color=c("panel"),
-            font=ctk.CTkFont(family="Inter", size=12, family="Courier New"),
+            font=ctk.CTkFont(family="Courier New", size=12),
             wrap="word",
             state="disabled",
             corner_radius=RADIUS["card"],

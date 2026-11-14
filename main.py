@@ -136,7 +136,8 @@ class App(ctk.CTk):
         threading.Thread(target=self._check_updates, daemon=True).start()
 
     def _show_view(self, idx: int):
-        for i, v in enumerate(self._views):
+        # Sidebar selects tab 0 while it is being built, before views exist.
+        for i, v in enumerate(getattr(self, "_views", [])):
             if i == idx:
                 v.tkraise()
 
