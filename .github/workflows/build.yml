@@ -36,19 +36,7 @@ jobs:
       - name: Зібрати програму
         shell: powershell
         run: |
-          pyinstaller --onefile --windowed --name OpenForge `
-            --add-data "models_db;models_db" `
-            --hidden-import ui.agent_view `
-            --hidden-import ui.catalog_view `
-            --hidden-import ui.chat_view `
-            --hidden-import ui.compare_view `
-            --hidden-import ui.hardware_panel `
-            --hidden-import ui.theme `
-            --hidden-import core.ollama_client `
-            --hidden-import core.hardware `
-            --hidden-import agent.agent_core `
-            --hidden-import models_db.catalog `
-            main.py
+          pyinstaller OpenForge.spec
 
       - name: Зберегти файл
         uses: actions/upload-artifact@v4
