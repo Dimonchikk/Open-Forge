@@ -825,8 +825,8 @@ footer {
     <h2>Open Forge 1.0</h2>
     <p class="section-sub">Безкоштовно, з відкритим кодом, тільки для Windows. Дані залишаються у тебе.</p>
     <div class="download-actions">
-      <a class="btn-download" href="https://github.com/Dimonchikk/Open-Forge/releases/latest" target="_blank">
-        ↓ Завантажити інсталятор (.exe)
+      <a class="btn-download dl" href="https://github.com/Dimonchikk/Open-Forge/releases/latest/download/OpenForge.exe" target="_blank">
+        ↓ Завантажити інсталятор (.exe) <span class="ver"></span>
       </a>
       <p class="download-note">
         Або зібрати самостійно з
@@ -859,5 +859,40 @@ footer {
     </ul>
   </div>
 </footer>
+<script>
+(function () {
+  var REPO = "Dimonchikk/Open-Forge";
+  var VERSION = "1.0.0";
+  var EXE = "OpenForge.exe";
+
+  var base = "https://github.com/" + REPO + "/releases";
+  document.querySelectorAll(".dl").forEach(function (a) {
+    a.href = base + "/latest/download/" + EXE;
+  });
+  document.querySelectorAll(".rel").forEach(function (a) { a.href = base; });
+
+  function setVer(v) {
+    document.querySelectorAll(".ver").forEach(function (s) { s.textContent = "v" + v; });
+  }
+  setVer(VERSION);
+
+  // Версія береться з останнього опублікованого релізу — сайт не треба правити вручну.
+  if (window.fetch) {
+    fetch("https://api.github.com/repos/" + REPO + "/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (j && j.tag_name) {
+          var v = String(j.tag_name).replace(/^v/i, "");
+          setVer(v);
+          // Оновлюємо пряме посилання на файл конкретної версії
+          document.querySelectorAll(".dl").forEach(function (a) {
+            a.href = "https://github.com/" + REPO + "/releases/download/" + j.tag_name + "/" + EXE;
+          });
+        }
+      })
+      .catch(function () {});
+  }
+})();
+</script>
 </body>
 </html>

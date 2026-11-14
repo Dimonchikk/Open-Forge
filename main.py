@@ -3,7 +3,10 @@ Open Forge — local AI launcher
 Entry point: python main.py
 """
 import sys
+import threading
 import tkinter as tk
+import urllib.request
+import json
 import customtkinter as ctk
 
 from ui.theme import apply_theme, c, RADIUS
@@ -13,6 +16,7 @@ from ui.compare_view import CompareView
 from ui.agent_view import AgentView
 from ui.hardware_panel import HardwarePanel
 from core.ollama_client import is_ollama_running
+from version import VERSION
 
 
 # ── sidebar navigation ────────────────────────────────────────────────────────
@@ -129,6 +133,7 @@ class App(ctk.CTk):
         self._show_view(0)
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        threading.Thread(target=self._check_updates, daemon=True).start()
 
     def _show_view(self, idx: int):
         for i, v in enumerate(self._views):
@@ -153,6 +158,36 @@ class App(ctk.CTk):
             justify="center",
         ).pack(expand=True, pady=20)
         ctk.CTkButton(win, text="OK", command=win.destroy).pack(pady=(0, 16))
+
+    def _check_updates(self):
+        try:
+            url = "https://api.github.com/repos/Dimonchikk/Open-Forge/releases/latest"
+            req = urllib.request.Request(url, headers={"User-Agent": "OpenForge/" + VERSION})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read())
+            latest = data.get("tag_name", "").lstrip("vV")
+            if latest and latest != VERSION:
+                self.after(0, lambda: self._show_update_banner(latest, data.get("html_url", "")))
+        except Exception:
+            pass
+
+    def _show_update_banner(self, latest: str, url: str):
+        banner = ctk.CTkFrame(self, fg_color=c("accent"), corner_radius=8, height=36)
+        banner.place(relx=0.5, rely=1.0, anchor="s", relwidth=0.6, y=-12)
+        ctk.CTkLabel(
+            banner,
+            text=f"⬆  Доступне оновлення v{latest}",
+            font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+            text_color="#ffffff",
+        ).pack(side="left", padx=14, pady=6)
+        import webbrowser
+        ctk.CTkButton(
+            banner,
+            text="Завантажити",
+            height=24,
+            font=ctk.CTkFont(family="Inter", size=12),
+            command=lambda: webbrowser.open(url),
+        ).pack(side="right", padx=8, pady=6)
 
     def _on_close(self):
         self._hw_panel.stop()
