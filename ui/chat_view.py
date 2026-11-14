@@ -15,8 +15,9 @@ from core.ollama_client import chat_stream, tokens_per_second
 from ui import bg
 from ui.dialogs import Dialog, confirm
 from ui.icons import icon, logo
+from ui.inputs import Hint
 from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu, segmented,
-                      logical)
+                      logical, IconButton)
 
 PERMS = {
     "Питати завжди": (PermissionLevel.MANUAL, "Кожну дію агента ти підтверджуєш сам.", "text_dim"),
@@ -47,51 +48,46 @@ class _Composer(ctk.CTkFrame):
         self._busy = False
         self.grid_columnconfigure(1, weight=1)
 
-        self.plus = ctk.CTkButton(self, text="", width=36, height=36, corner_radius=18,
-                                  image=icon("plus", c("text_dim"), 18), fg_color="transparent",
-                                  hover_color=c("hover"), border_width=1, border_color=c("border"),
-                                  command=on_plus)
+        self.plus = IconButton(self, icon("plus", c("text_dim"), 18), command=on_plus,
+                               border_color=c("border"))
         self.plus.grid(row=0, column=0, sticky="sw", padx=(8, 0), pady=8)
         if on_plus is None:
             self.plus.grid_remove()
 
         self.text = ctk.CTkTextbox(self, height=28, fg_color="transparent", wrap="word",
                                    font=font(14), text_color=c("text"), border_width=0,
-                                   activate_scrollbars=False)
+                                   activate_scrollbars=False, undo=True, maxundo=-1)
         self.text.grid(row=0, column=1, sticky="ew", padx=(8, 6), pady=(10, 10))
-        self._ph = ctk.CTkLabel(self, text=placeholder, font=font(14),
-                                text_color=c("text_faint"), fg_color="transparent")
-        self._ph_x = 62 if on_plus else 20
-        self._ph.place(x=self._ph_x, y=13)
-        self._ph.bind("<Button-1>", lambda e: self.text.focus_set())
+        tb = self.text._textbox
+        tb.configure(insertwidth=2)
+        self._hint = Hint(tb, placeholder)
 
-        self.btn = ctk.CTkButton(self, text="", width=36, height=36, corner_radius=18,
-                                 image=icon("send", "#FFFFFF", 18),
-                                 fg_color=c("accent"), hover_color=c("accent_hover"),
-                                 command=self._click)
+        self.btn = IconButton(self, icon("send", "#FFFFFF", 18), command=self._click,
+                              fg_color=c("accent"), hover_color=c("accent_hover"))
         self.btn.grid(row=0, column=2, sticky="se", padx=(0, 8), pady=8)
 
-        tb = self.text._textbox
         tb.bind("<Return>", self._on_return)
-        tb.bind("<KeyRelease>", lambda e: self._refresh())
-        tb.bind("<FocusIn>", lambda e: self._refresh())
-        tb.bind("<FocusOut>", lambda e: self._refresh())
+        tb.bind("<KeyRelease>", lambda e: self._refresh(), add="+")
+        tb.bind("<<Paste>>", lambda e: self.after_idle(self._refresh), add="+")
 
     def set_placeholder(self, text: str):
-        self._ph.configure(text=text)
+        self._hint.set_text(text)
 
     def set_plus_active(self, on: bool):
-        self.plus.configure(fg_color=c("accent_soft") if on else "transparent",
+        self.plus.set_style(fg_color=c("accent_soft") if on else "transparent",
                             border_color=c("accent_soft") if on else c("border"),
                             image=icon("folder" if on else "plus",
                                        c("accent") if on else c("text_dim"), 18))
 
     def get(self) -> str:
-        return self.text.get("1.0", "end").strip()
+        return self._hint.value().strip()
 
     def set(self, value: str):
+        self._hint.clear()
         self.text.delete("1.0", "end")
         self.text.insert("1.0", value)
+        if not value:
+            self._hint.show()
         self._refresh()
 
     def clear(self):
@@ -100,7 +96,7 @@ class _Composer(ctk.CTkFrame):
     def set_busy(self, busy: bool):
         self._busy = busy
         # stop = inverted button (dark in light theme, light in dark theme)
-        self.btn.configure(image=icon("stop", c("card"), 18) if busy else
+        self.btn.set_style(image=icon("stop", c("card"), 18) if busy else
                            icon("send", "#FFFFFF", 18),
                            fg_color=c("text") if busy else c("accent"),
                            hover_color=c("text_dim") if busy else c("accent_hover"))
@@ -110,16 +106,12 @@ class _Composer(ctk.CTkFrame):
 
     def _on_return(self, event):
         if event.state & 0x0001:      # Shift+Enter → new line
-            return None
+            return "break" if self._hint.active else None
         if not self._busy:
             self._on_send()
         return "break"
 
     def _refresh(self):
-        if self.text.get("1.0", "end-1c"):
-            self._ph.place_forget()
-        else:
-            self._ph.place(x=self._ph_x, y=13)
         try:
             lines = int(self.text._textbox.count("1.0", "end", "displaylines")[0])
         except Exception:
@@ -177,7 +169,8 @@ class ChatView(ctk.CTkFrame):
                           "і українською» або «Ти — викладач фізики».").pack(anchor="w", padx=16)
         self._sys_text = ctk.CTkTextbox(self._sys_panel, height=64, font=font(13), wrap="word",
                                         fg_color=c("card_alt"), text_color=c("text"),
-                                        corner_radius=RADIUS["input"], border_width=0)
+                                        corner_radius=RADIUS["input"], border_width=0,
+                                        undo=True, maxundo=-1)
         self._sys_text.pack(fill="x", padx=16, pady=(8, 14))
         self._sys_text.insert("1.0", settings.get("system_prompt") or "")
         self._sys_text._textbox.bind("<KeyRelease>", lambda e: self._save_sys())
@@ -213,9 +206,8 @@ class ChatView(ctk.CTkFrame):
             fg_color="transparent", hover_color=c("accent_soft"), text_color=c("accent"),
             image=icon("folder", c("accent"), 15), compound="left", command=self._agent_dialog)
         self._chip_lbl.pack(side="left", padx=(4, 0))
-        ctk.CTkButton(self._agent_chip, text="", width=26, height=26, corner_radius=13,
-                      image=icon("x", c("accent"), 13), fg_color="transparent",
-                      hover_color=c("hover"), command=self._agent_off).pack(side="left", padx=4)
+        IconButton(self._agent_chip, icon("x", c("accent"), 13), command=self._agent_off,
+                   size=26).pack(side="left", padx=4)
 
         self._composer = _Composer(foot, self._send, self._stop_now,
                                    "Напиши повідомлення…", on_plus=self._agent_dialog)

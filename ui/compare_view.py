@@ -6,8 +6,9 @@ import customtkinter as ctk
 
 from core.ollama_client import chat_stream, tokens_per_second
 from ui.icons import icon
+from ui.inputs import Hint
 from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu, page_header,
-                      badge, logical)
+                      badge, logical, IconButton)
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S)
 LETTERS = "ABC"
@@ -31,9 +32,8 @@ class _Side(ctk.CTkFrame):
         self.letter.grid(row=0, column=0)
         self.picker = option_menu(head, ["—"], width=180)
         self.picker.grid(row=0, column=1, sticky="ew", padx=(10, 0))
-        self.close = ctk.CTkButton(head, text="", width=30, height=30, corner_radius=15,
-                                   image=icon("x", c("text_faint"), 14), fg_color="transparent",
-                                   hover_color=c("hover"), command=lambda: view.remove_side(self))
+        self.close = IconButton(head, icon("x", c("text_faint"), 14), size=30,
+                                command=lambda: view.remove_side(self))
 
         self.scroll = ctk.CTkScrollableFrame(self, fg_color="transparent",
                                              scrollbar_button_color=c("border"))
@@ -104,9 +104,10 @@ class CompareView(ctk.CTkFrame):
         self._bar.grid(row=2, column=0, sticky="ew", padx=28, pady=(14, 18))
         self._bar.grid_columnconfigure(0, weight=1)
         self._input = ctk.CTkEntry(self._bar, height=40, border_width=0, fg_color="transparent",
-                                   font=font(14), text_color=c("text"),
-                                   placeholder_text="Питання для всіх моделей…")
+                                   font=font(14), text_color=c("text"))
         self._input.grid(row=0, column=0, sticky="ew", padx=(16, 8), pady=6)
+        self._input._entry.configure(insertwidth=2)
+        self._hint = Hint(self._input._entry, "Питання для всіх моделей…")
         self._input.bind("<Return>", lambda e: self._go())
         self._btn = primary_button(self._bar, "Порівняти", width=140, height=36, corner_radius=18,
                                    image=icon("compare", "#FFFFFF", 15), compound="left",
@@ -202,7 +203,7 @@ class CompareView(ctk.CTkFrame):
         if self._busy():
             self._stop.set()
             return
-        prompt = self._input.get().strip()
+        prompt = self._hint.value().strip()
         if not prompt or len(self._names) < 1:
             return
         self._stop.clear()

@@ -167,3 +167,49 @@ def page_header(master, title: str, subtitle: str = "") -> ctk.CTkFrame:
         ctk.CTkLabel(head, text=subtitle, font=font(13), text_color=c("text_dim"),
                      anchor="w", justify="left").pack(anchor="w", pady=(2, 0))
     return head
+
+
+class IconButton(ctk.CTkFrame):
+    """Exactly round (or rounded-square) icon button.
+
+    CTkButton reserves `corner_radius` px on both sides, so a 36 px button with
+    radius 18 grew into a ~54 px oval. This draws a fixed-size frame instead.
+    """
+
+    def __init__(self, master, image, command=None, size: int = 36, radius: int | None = None,
+                 fg_color="transparent", hover_color=None, border_color=None):
+        super().__init__(master, width=size, height=size,
+                         corner_radius=size // 2 if radius is None else radius,
+                         fg_color=fg_color, border_width=1 if border_color else 0,
+                         border_color=border_color or c("border"))
+        self.grid_propagate(False)
+        self.pack_propagate(False)
+        self._command = command
+        self._fg = fg_color
+        self._hover = hover_color or c("hover")
+        self._label = ctk.CTkLabel(self, text="", image=image, width=size - 8, height=size - 8,
+                                   fg_color="transparent", cursor="hand2")
+        self._label.place(relx=0.5, rely=0.5, anchor="center")
+        self.configure(cursor="hand2")
+        for w in (self, self._label):
+            w.bind("<Button-1>", self._click)
+            w.bind("<Enter>", lambda e: super(IconButton, self).configure(fg_color=self._hover))
+            w.bind("<Leave>", lambda e: super(IconButton, self).configure(fg_color=self._fg))
+
+    def _click(self, _e=None):
+        if self._command:
+            self._command()
+
+    def set_style(self, image=None, fg_color=None, hover_color=None, border_color=None):
+        if fg_color is not None:
+            self._fg = fg_color
+            super().configure(fg_color=fg_color)
+        if hover_color is not None:
+            self._hover = hover_color
+        if border_color is not None:
+            super().configure(border_color=border_color)
+        if image is not None:
+            self._label.configure(image=image)
+
+    def set_command(self, command):
+        self._command = command

@@ -13,6 +13,7 @@ from core import ollama_setup, updater
 from core.ollama_client import is_ollama_running, list_local_models
 from core.settings import resource_path
 from ui import bg
+from ui import inputs
 from ui.dialogs import Dialog
 from ui.icons import icon, logo
 from ui.theme import apply_theme, c, font, resolve, RADIUS, primary_button, ghost_button
@@ -120,6 +121,7 @@ class App(ctk.CTk):
         self.configure(fg_color=c("bg"))
         self._set_icon()
         bg.start(self)
+        inputs.install(self)       # Ctrl+A/C/V/X/Z/Y on any keyboard layout + right-click menu
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)

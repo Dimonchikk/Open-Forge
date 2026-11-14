@@ -8,8 +8,9 @@ from models_db.catalog import CATALOG, CATEGORIES, fit, FIT_FAST, FIT_SLOW, FIT_
 from ui import bg
 from ui.dialogs import confirm
 from ui.icons import icon
+from ui.inputs import Hint
 from ui.theme import (c, font, RADIUS, primary_button, ghost_button, badge, segmented,
-                      page_header, logical)
+                      page_header, logical, IconButton)
 
 FIT_BADGE = {
     FIT_FAST: ("Рекомендовано", "success"),
@@ -59,9 +60,10 @@ class CatalogView(ctk.CTkFrame):
         ctk.CTkLabel(search, text="", image=icon("search", c("text_faint"), 16)
                      ).pack(side="left", padx=(10, 0))
         self._search = ctk.CTkEntry(search, width=220, height=36, border_width=0,
-                                    fg_color="transparent", font=font(13),
-                                    placeholder_text="Пошук моделі", text_color=c("text"))
+                                    fg_color="transparent", font=font(13), text_color=c("text"))
         self._search.pack(side="left", padx=(4, 8))
+        self._search._entry.configure(insertwidth=2)
+        self._search_hint = Hint(self._search._entry, "Пошук моделі")
         self._search.bind("<KeyRelease>", lambda e: self._on_search())
 
         filt = ctk.CTkFrame(self, fg_color="transparent")
@@ -118,7 +120,7 @@ class CatalogView(ctk.CTkFrame):
         self._render()
 
     def _on_search(self):
-        self._query = self._search.get().strip().lower()
+        self._query = self._search_hint.value().strip().lower()
         self._render()
 
     def _visible(self) -> list[dict]:
@@ -245,11 +247,9 @@ class CatalogView(ctk.CTkFrame):
             primary_button(box, "Відкрити в чаті", width=160, height=34,
                            image=icon("chat", "#FFFFFF", 15), compound="left",
                            command=lambda: self._open(mid)).pack(side="left")
-            ctk.CTkButton(box, text="", width=34, height=34, corner_radius=RADIUS["button"],
-                          image=icon("trash", c("danger"), 16), fg_color="transparent",
-                          hover_color=c("danger_soft"), border_width=1,
-                          border_color=c("border"),
-                          command=lambda: self._delete(m)).pack(side="left", padx=(8, 0))
+            IconButton(box, icon("trash", c("danger"), 16), size=34, radius=RADIUS["button"],
+                       hover_color=c("danger_soft"), border_color=c("border"),
+                       command=lambda: self._delete(m)).pack(side="left", padx=(8, 0))
         else:
             rec = fit(m, self._vram, self._ram) == FIT_FAST
             make = primary_button if rec else ghost_button
