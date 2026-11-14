@@ -1,15 +1,30 @@
 """Chat: model picker, message bubbles, streaming answers, instructions panel."""
+import os
 import re
+import sys
 import threading
 import time
-import webbrowser
+from pathlib import Path
+from tkinter import filedialog
 import customtkinter as ctk
 
+from agent.agent_core import AgentRunner, PermissionLevel, ToolsUnsupported
+
 from core import settings
-from core.ollama_client import chat_stream, tokens_per_second, OLLAMA_DOWNLOAD_URL
+from core.ollama_client import chat_stream, tokens_per_second
 from ui import bg
+from ui.dialogs import Dialog, confirm
 from ui.icons import icon, logo
-from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu)
+from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu, segmented)
+
+PERMS = {
+    "Питати завжди": (PermissionLevel.MANUAL, "Кожну дію агента ти підтверджуєш сам.", "text_dim"),
+    "Авто": (PermissionLevel.AUTO,
+             "Файли створює сам, а видалення й запуск команд — лише з твого дозволу.", "text_dim"),
+    "Повний доступ": (PermissionLevel.FULL,
+                      "Агент діє без підтверджень, включно з командами. Вмикай лише для "
+                      "папок, які не шкода.", "warning"),
+}
 
 SUGGESTIONS = [
     ("Поясни просто", "як працює нейромережа, на прикладі"),
@@ -22,35 +37,53 @@ _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S)
 
 
 class _Composer(ctk.CTkFrame):
-    """Rounded multi-line input with a send/stop button inside."""
+    """Rounded multi-line input: [+ tools] [text] [send/stop]."""
 
-    def __init__(self, master, on_send, on_stop, placeholder):
-        super().__init__(master, fg_color=c("card"), corner_radius=20,
+    def __init__(self, master, on_send, on_stop, placeholder, on_plus=None):
+        super().__init__(master, fg_color=c("card"), corner_radius=22,
                          border_width=1, border_color=c("border"))
         self._on_send, self._on_stop = on_send, on_stop
         self._busy = False
-        self.grid_columnconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+
+        self.plus = ctk.CTkButton(self, text="", width=36, height=36, corner_radius=18,
+                                  image=icon("plus", c("text_dim"), 18), fg_color="transparent",
+                                  hover_color=c("hover"), border_width=1, border_color=c("border"),
+                                  command=on_plus)
+        self.plus.grid(row=0, column=0, sticky="sw", padx=(8, 0), pady=8)
+        if on_plus is None:
+            self.plus.grid_remove()
 
         self.text = ctk.CTkTextbox(self, height=28, fg_color="transparent", wrap="word",
                                    font=font(14), text_color=c("text"), border_width=0,
                                    activate_scrollbars=False)
-        self.text.grid(row=0, column=0, sticky="ew", padx=(14, 6), pady=(10, 10))
+        self.text.grid(row=0, column=1, sticky="ew", padx=(8, 6), pady=(10, 10))
         self._ph = ctk.CTkLabel(self, text=placeholder, font=font(14),
                                 text_color=c("text_faint"), fg_color="transparent")
-        self._ph.place(x=20, y=13)
+        self._ph_x = 62 if on_plus else 20
+        self._ph.place(x=self._ph_x, y=13)
         self._ph.bind("<Button-1>", lambda e: self.text.focus_set())
 
         self.btn = ctk.CTkButton(self, text="", width=36, height=36, corner_radius=18,
                                  image=icon("send", "#FFFFFF", 18),
                                  fg_color=c("accent"), hover_color=c("accent_hover"),
                                  command=self._click)
-        self.btn.grid(row=0, column=1, sticky="se", padx=(0, 8), pady=8)
+        self.btn.grid(row=0, column=2, sticky="se", padx=(0, 8), pady=8)
 
         tb = self.text._textbox
         tb.bind("<Return>", self._on_return)
         tb.bind("<KeyRelease>", lambda e: self._refresh())
         tb.bind("<FocusIn>", lambda e: self._refresh())
         tb.bind("<FocusOut>", lambda e: self._refresh())
+
+    def set_placeholder(self, text: str):
+        self._ph.configure(text=text)
+
+    def set_plus_active(self, on: bool):
+        self.plus.configure(fg_color=c("accent_soft") if on else "transparent",
+                            border_color=c("accent_soft") if on else c("border"),
+                            image=icon("folder" if on else "plus",
+                                       c("accent") if on else c("text_dim"), 18))
 
     def get(self) -> str:
         return self.text.get("1.0", "end").strip()
@@ -65,7 +98,9 @@ class _Composer(ctk.CTkFrame):
 
     def set_busy(self, busy: bool):
         self._busy = busy
-        self.btn.configure(image=icon("stop" if busy else "send", "#FFFFFF", 18),
+        # stop = inverted button (dark in light theme, light in dark theme)
+        self.btn.configure(image=icon("stop", c("card"), 18) if busy else
+                           icon("send", "#FFFFFF", 18),
                            fg_color=c("text") if busy else c("accent"),
                            hover_color=c("text_dim") if busy else c("accent_hover"))
 
@@ -83,7 +118,7 @@ class _Composer(ctk.CTkFrame):
         if self.text.get("1.0", "end-1c"):
             self._ph.place_forget()
         else:
-            self._ph.place(x=20, y=13)
+            self._ph.place(x=self._ph_x, y=13)
         try:
             lines = int(self.text._textbox.count("1.0", "end", "displaylines")[0])
         except Exception:
@@ -169,12 +204,28 @@ class ChatView(ctk.CTkFrame):
         foot.grid(row=3, column=0, sticky="ew", padx=24, pady=(4, 14))
         foot.grid_columnconfigure(0, weight=1)
         self._foot = foot
+
+        # agent chip: shown while the chat works inside a folder
+        self._agent_chip = ctk.CTkFrame(foot, fg_color=c("accent_soft"), corner_radius=RADIUS["button"])
+        self._chip_lbl = ctk.CTkButton(
+            self._agent_chip, text="", height=30, anchor="w", font=font(12, "bold"),
+            fg_color="transparent", hover_color=c("accent_soft"), text_color=c("accent"),
+            image=icon("folder", c("accent"), 15), compound="left", command=self._agent_dialog)
+        self._chip_lbl.pack(side="left", padx=(4, 0))
+        ctk.CTkButton(self._agent_chip, text="", width=26, height=26, corner_radius=13,
+                      image=icon("x", c("accent"), 13), fg_color="transparent",
+                      hover_color=c("hover"), command=self._agent_off).pack(side="left", padx=4)
+
         self._composer = _Composer(foot, self._send, self._stop_now,
-                                   "Напиши повідомлення…")
-        self._composer.grid(row=0, column=0, sticky="ew")
+                                   "Напиши повідомлення…", on_plus=self._agent_dialog)
+        self._composer.grid(row=1, column=0, sticky="ew")
         ctk.CTkLabel(foot, text="Enter — надіслати · Shift+Enter — новий рядок · "
-                                "усе працює локально на твоєму ПК",
-                     font=font(11), text_color=c("text_faint")).grid(row=1, column=0, pady=(6, 0))
+                                "+ — робота з файлами в папці",
+                     font=font(11), text_color=c("text_faint")).grid(row=2, column=0, pady=(6, 0))
+        self._agent_folder = ""
+        self._agent_perm = settings.get("agent_perm") or "Авто"
+        if settings.get("agent_on") and settings.get("agent_folder"):
+            self._set_agent(settings.get("agent_folder"), self._agent_perm)
 
         self._render_empty()
 
@@ -244,7 +295,7 @@ class ChatView(ctk.CTkFrame):
         if self._state == "no_ollama":
             title = "Ollama не запущена"
             text = ("Open Forge запускає моделі через Ollama — безкоштовну програму.\n"
-                    "Встанови її (або просто запусти, якщо вже є), і чат запрацює.")
+                    "Встанови її за хвилину — з вибором папки, — і чат запрацює.")
         elif self._state == "no_models":
             title = "Ще немає жодної моделі"
             text = ("Встанови першу модель з каталогу.\n"
@@ -262,9 +313,9 @@ class ChatView(ctk.CTkFrame):
         if self._state == "no_ollama":
             row = ctk.CTkFrame(box, fg_color="transparent")
             row.pack()
-            primary_button(row, "Завантажити Ollama", width=190, height=40,
+            primary_button(row, "Встановити Ollama", width=190, height=40,
                            image=icon("download", "#FFFFFF", 16), compound="left",
-                           command=lambda: webbrowser.open(OLLAMA_DOWNLOAD_URL)).pack(side="left")
+                           command=lambda: self.app.show("setup")).pack(side="left")
             ghost_button(row, "Перевірити знову", width=170, height=40,
                          image=icon("refresh", c("text_dim"), 16), compound="left",
                          command=self.app.refresh_models).pack(side="left", padx=(10, 0))
@@ -392,6 +443,9 @@ class ChatView(ctk.CTkFrame):
         self._streaming = True
         self._composer.set_busy(True)
         system = self._sys_text.get("1.0", "end").strip()
+        if self._agent_folder:
+            self._run_agent(msg, text, system)
+            return
         threading.Thread(target=self._worker, args=(msg, list(self._messages), system),
                          daemon=True).start()
         self._render_loop(msg)
@@ -472,3 +526,225 @@ class ChatView(ctk.CTkFrame):
 
     def _stop_now(self):
         self._stop.set()
+
+    # ── agent mode (work with files in a folder) ──────────────────────────────
+
+    def _set_agent(self, folder: str, perm: str):
+        self._agent_folder = folder
+        self._agent_perm = perm
+        name = Path(folder).name or folder
+        self._chip_lbl.configure(text=f"  Агент працює в папці «{name}» · {perm}")
+        self._agent_chip.grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self._composer.set_plus_active(True)
+        self._composer.set_placeholder("Опиши, що зробити в папці…")
+        settings.set("agent_folder", folder)
+        settings.set("agent_perm", perm)
+        settings.set("agent_on", True)
+
+    def _agent_off(self):
+        self._agent_folder = ""
+        self._agent_chip.grid_forget()
+        self._composer.set_plus_active(False)
+        self._composer.set_placeholder("Напиши повідомлення…")
+        settings.set("agent_on", False)
+
+    def _agent_dialog(self):
+        d = Dialog(self, "Робота з файлами", width=520)
+        d.heading("Робота з файлами в папці",
+                  "Модель сама створюватиме й змінюватиме файли, а за потреби запускатиме "
+                  "команди — лише всередині вибраної папки. Без папки це звичайний чат.")
+        folder = ctk.StringVar(value=self._agent_folder or settings.get("agent_folder")
+                               or str(desktop_dir() / "OpenForgeProject"))
+        ctk.CTkLabel(d.body, text="Папка", font=font(13, "bold"), text_color=c("text_dim"),
+                     anchor="w").pack(anchor="w", pady=(16, 4))
+        row = ctk.CTkFrame(d.body, fg_color="transparent")
+        row.pack(fill="x")
+        row.grid_columnconfigure(0, weight=1)
+        ctk.CTkEntry(row, textvariable=folder, height=36, font=font(13), border_width=0,
+                     fg_color=c("card_alt"), text_color=c("text"),
+                     corner_radius=RADIUS["button"]).grid(row=0, column=0, sticky="ew")
+
+        def browse():
+            path = filedialog.askdirectory(initialdir=folder.get(), parent=d,
+                                           title="Обери папку для агента")
+            if path:
+                folder.set(str(Path(path)))
+
+        ghost_button(row, "Обрати…", width=104, height=36,
+                     image=icon("folder", c("text_dim"), 15), compound="left",
+                     command=browse).grid(row=0, column=1, padx=(8, 0))
+        ctk.CTkLabel(d.body, text="Якщо такої папки ще немає — її буде створено.",
+                     font=font(11), text_color=c("text_faint"), anchor="w").pack(anchor="w",
+                                                                                  pady=(4, 0))
+
+        ctk.CTkLabel(d.body, text="Дозволи", font=font(13, "bold"), text_color=c("text_dim"),
+                     anchor="w").pack(anchor="w", pady=(14, 4))
+        hint = ctk.CTkLabel(d.body, text="", font=font(12), anchor="w", justify="left",
+                            wraplength=470)
+
+        def on_perm(v):
+            perm["v"] = v
+            hint.configure(text=PERMS[v][1], text_color=c(PERMS[v][2]))
+
+        perm = {"v": self._agent_perm if self._agent_perm in PERMS else "Авто"}
+        seg = segmented(d.body, list(PERMS), command=on_perm)
+        seg.set(perm["v"])
+        seg.pack(anchor="w")
+        hint.pack(anchor="w", pady=(6, 0))
+        on_perm(perm["v"])
+
+        def enable():
+            path = folder.get().strip()
+            if not path:
+                return
+            try:
+                Path(path).expanduser().mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                hint.configure(text=f"Не вдалося створити папку: {e}", text_color=c("danger"))
+                return
+            self._set_agent(str(Path(path).expanduser()), perm["v"])
+            d.close()
+
+        primary_button(d.buttons, "Увімкнути", width=130, command=enable).pack(side="right")
+        if self._agent_folder:
+            ghost_button(d.buttons, "Вимкнути агента", width=150,
+                         command=lambda: (self._agent_off(), d.close())).pack(side="right",
+                                                                                padx=(0, 8))
+        else:
+            ghost_button(d.buttons, "Скасувати", width=110,
+                         command=d.close).pack(side="right", padx=(0, 8))
+        d.show()
+
+    def _run_agent(self, msg: dict, task: str, instruction: str):
+        lbl, foot, row = msg["label"], msg["foot"], msg["row"]
+        steps = ctk.CTkFrame(row, fg_color=c("card"), corner_radius=RADIUS["card"],
+                             border_width=1, border_color=c("border"))
+        steps.grid_columnconfigure(1, weight=1)
+        msg.update(steps=steps, n_steps=0, texts=[], last_step=None)
+        lbl.grid_configure(row=2)
+        foot.grid_configure(row=3)
+        lbl.configure(text="Думає…")
+        folder = self._agent_folder
+        history = [m for m in self._messages[:-1] if m["role"] in ("user", "assistant")]
+
+        def event(kind, payload):
+            bg.ui(self._agent_event, msg, kind, payload)
+
+        def work():
+            runner = AgentRunner(model=self._model, project_folder=folder,
+                                 permission=PERMS[self._agent_perm][0], confirm_cb=self._ask,
+                                 event_cb=event, stop_event=self._stop, history=history,
+                                 instruction=instruction)
+            runner.run(task)
+            return runner.changed
+
+        bg.run(work, on_done=lambda changed: self._agent_done(msg, folder, changed, None),
+               on_error=lambda e: self._agent_done(msg, folder, [], e))
+
+    def _agent_event(self, msg: dict, kind: str, payload):
+        steps = msg["steps"]
+        if kind == "text":
+            msg["texts"].append(payload.strip())
+            msg["label"].configure(text="\n\n".join(msg["texts"]), text_color=c("text"))
+        elif kind == "step":
+            if not steps.winfo_ismapped():
+                steps.grid(row=1, column=0, sticky="ew", pady=(6, 4))
+            r = msg["n_steps"]
+            msg["n_steps"] += 1
+            ic = ctk.CTkLabel(steps, text="", image=icon("dot", c("text_faint"), 12), width=20)
+            ic.grid(row=r * 2, column=0, sticky="nw", padx=(12, 4), pady=(9 if r == 0 else 4, 0))
+            t = ctk.CTkLabel(steps, text=payload, font=font(13, mono=True), text_color=c("text"),
+                             anchor="w", justify="left", wraplength=self._col_width() - 80)
+            t.grid(row=r * 2, column=1, sticky="w", padx=(0, 12), pady=(8 if r == 0 else 3, 0))
+            msg["last_step"] = (ic, r, payload)
+            if not msg["texts"]:
+                msg["label"].configure(text="Працює…", text_color=c("text_faint"))
+        elif kind == "result" and msg.get("last_step"):
+            ok, text = payload
+            ic, r, title = msg["last_step"]
+            ic.configure(image=icon("check" if ok else "x", c("success") if ok else c("danger"), 14))
+            first = text.strip().splitlines()[0] if text.strip() else ""
+            if not ok or title.startswith("Виконує команду"):
+                short = (first[:140] + "…") if len(first) > 140 else first
+                ctk.CTkLabel(msg["steps"], text=short, font=font(11, mono=True),
+                             text_color=c("danger") if not ok else c("text_faint"), anchor="w",
+                             justify="left", wraplength=self._col_width() - 80
+                             ).grid(row=r * 2 + 1, column=1, sticky="w", padx=(0, 12))
+        self._scroll_end()
+
+    def _agent_done(self, msg: dict, folder: str, changed: list, err):
+        self._streaming = False
+        self._composer.set_busy(False)
+        if msg.get("n_steps"):
+            ctk.CTkFrame(msg["steps"], width=1, height=8, fg_color="transparent").grid(
+                row=msg["n_steps"] * 2 + 1, column=0, columnspan=2)
+        if isinstance(err, ToolsUnsupported):
+            msg["label"].configure(
+                text=f"Модель «{self._model}» не вміє працювати з файлами.\n"
+                     "Для агента обери модель з позначкою «інструменти» — наприклад Qwen 3 8B "
+                     "або Qwen 2.5 Coder 7B.", text_color=c("danger"))
+            ghost_button(msg["foot"], "Відкрити моделі", width=150, height=30,
+                         command=lambda: self.app.show("models")).pack(side="left")
+            self._messages.pop()
+            return
+        if err:
+            msg["label"].configure(text=f"Агент зупинився з помилкою: {err}",
+                                   text_color=c("danger"))
+            self._messages.pop()
+            return
+        summary = "\n\n".join(msg["texts"]) or ("Зупинено." if self._stop.is_set() else "Готово.")
+        msg["label"].configure(text=summary, text_color=c("text"))
+        self._messages.append({"role": "assistant", "content": summary})
+        info = f"Змінено файлів: {len(set(changed))}" if changed else "Файли не змінювались"
+        ctk.CTkLabel(msg["foot"], text=info, font=font(11),
+                     text_color=c("text_faint")).pack(side="left")
+        ctk.CTkButton(msg["foot"], text="Відкрити папку", width=120, height=24, font=font(11),
+                      image=icon("folder", c("text_faint"), 13), compound="left",
+                      fg_color="transparent", hover_color=c("hover"), text_color=c("text_faint"),
+                      corner_radius=8, command=lambda: open_folder(folder)
+                      ).pack(side="left", padx=(8, 0))
+        self._scroll_end()
+
+    def _ask(self, tool_name: str, description: str) -> bool:
+        """Called from the agent thread: in-app dialog on the UI thread, wait for the answer."""
+        answer = {"ok": False}
+        ev = threading.Event()
+
+        def show():
+            def result(ok):
+                answer["ok"] = ok
+                ev.set()
+            confirm(self, "Дозволити дію агента?", description, "Дозволити", result,
+                    danger=tool_name in ("run_command", "delete_file"), cancel_text="Заборонити")
+
+        bg.ui(show)
+        while not ev.wait(0.2):
+            if self._stop.is_set():
+                return False
+        return answer["ok"]
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+def desktop_dir() -> Path:
+    """Real Desktop folder (may be inside OneDrive on Windows)."""
+    if sys.platform == "win32":
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                 r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+            return Path(os.path.expandvars(winreg.QueryValueEx(key, "Desktop")[0]))
+        except OSError:
+            pass
+    return Path.home() / "Desktop"
+
+
+def open_folder(path: str):
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)  # noqa: S606
+        else:
+            import subprocess
+            subprocess.Popen(["xdg-open", path])
+    except Exception:
+        pass

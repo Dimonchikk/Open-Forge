@@ -264,7 +264,7 @@ class CatalogView(ctk.CTkFrame):
 
     def _download(self, m: dict):
         if not getattr(self, "_ollama_ok", True):
-            self.app.show("chat")
+            self.app.show("setup")
             return
         mid = m["id"]
         dl = {"stop": threading.Event(), "frac": 0.0, "text": "Підготовка…"}

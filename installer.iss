@@ -59,6 +59,8 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Запустити {#AppName}"; Flags: nowait postinstall skipifsilent
+; оновлення в один клік запускає інсталятор у тихому режимі — після нього відкриваємо програму знову
+Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser; Check: WizardSilent
 
 [Code]
 // Під час видалення через «Програми й компоненти» питаємо про налаштування.

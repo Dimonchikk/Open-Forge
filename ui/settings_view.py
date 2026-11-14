@@ -3,7 +3,8 @@ import webbrowser
 import customtkinter as ctk
 
 from core import settings, uninstall
-from core.ollama_client import OLLAMA_BASE, OLLAMA_DOWNLOAD_URL
+from core.ollama_client import OLLAMA_BASE
+from core.ollama_setup import get_user_env
 from core.settings import DATA_DIR
 from ui import bg
 from ui.dialogs import Dialog
@@ -73,12 +74,13 @@ class SettingsView(ctk.CTkFrame):
         # ollama
         card = self._section(col, "OLLAMA")
         self._ollama_lbl = self._row(card, 0, "Стан", "Перевіряю…",
-                                     ghost_button(card, "Сайт Ollama", width=140, height=34,
-                                                  image=icon("external", c("text_dim"), 14),
+                                     ghost_button(card, "Налаштувати", width=140, height=34,
+                                                  image=icon("settings", c("text_dim"), 14),
                                                   compound="left",
-                                                  command=lambda: webbrowser.open(
-                                                      OLLAMA_DOWNLOAD_URL)))
+                                                  command=lambda: self.app.show("setup")))
         self._row(card, 1, "Адреса", OLLAMA_BASE)
+        models_dir = get_user_env("OLLAMA_MODELS") or "стандартна (%USERPROFILE%\\.ollama\\models)"
+        self._row(card, 2, "Папка моделей", models_dir)
 
         # about
         card = self._section(col, "ПРО ПРОГРАМУ")

@@ -728,8 +728,8 @@ footer {
     </div>
     <div class="feature-card">
       <div class="feature-icon" style="background:#FF375F20">🤖</div>
-      <h3>Режим агента</h3>
-      <p>Модель сама створює файли, читає папки й запускає команди. Три рівні дозволів: ручний, авто і повний доступ.</p>
+      <h3>Агент у чаті</h3>
+      <p>Натисни «+», обери папку — і модель сама створює файли та запускає команди. Кожен крок видно, на небезпечні дії питає дозволу.</p>
     </div>
     <div class="feature-card">
       <div class="feature-icon" style="background:#BF5AF220">📊</div>
@@ -800,12 +800,12 @@ footer {
   <p class="section-sub">Просто встанови Ollama, завантаж Open Forge і запускай моделі.</p>
   <div class="steps">
     <div class="step">
-      <h3>Встанови Ollama</h3>
-      <p>Завантаж і встанови <a href="https://ollama.com" target="_blank">ollama.com</a> — рушій, що запускає моделі на твоєму комп'ютері.</p>
-    </div>
-    <div class="step">
       <h3>Завантаж Open Forge</h3>
       <p>Натисни кнопку нижче, запусти інсталятор і обери, куди встановити програму.</p>
+    </div>
+    <div class="step">
+      <h3>Налаштуй Ollama</h3>
+      <p>При першому запуску Open Forge сам встановить <a href="https://ollama.com" target="_blank">Ollama</a> — рушій моделей. Ти лише обираєш папки.</p>
     </div>
     <div class="step">
       <h3>Вибери модель</h3>
@@ -861,7 +861,7 @@ footer {
 <script>
 (function () {
   var REPO = "Dimonchikk/Open-Forge";
-  var VERSION = "1.1.0";
+  var VERSION = "1.2.0";
   var EXE = "OpenForge-setup.exe";
 
   var base = "https://github.com/" + REPO + "/releases";
