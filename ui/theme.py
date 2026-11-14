@@ -1,53 +1,157 @@
-"""Apple-inspired color tokens for CustomTkinter."""
+"""Design tokens for Open Forge: colours, fonts, radii.
+
+Every colour is a (light, dark) pair so CustomTkinter switches it with the
+appearance mode. Plain-Tk widgets (Canvas, tk.Text) can't do that, so they
+call `resolve()` to get the value for the current mode.
+"""
+import sys
 import customtkinter as ctk
 
-# ── color palette ──────────────────────────────────────────────────────────────
 COLORS = {
-    # backgrounds
-    "bg":           ("#F5F5F7", "#1C1C1E"),   # main window
-    "sidebar":      ("#FFFFFF", "#2C2C2E"),
-    "panel":        ("#FFFFFF", "#2C2C2E"),
-    "card":         ("#F2F2F7", "#3A3A3C"),
-    "card_hover":   ("#E8E8ED", "#48484A"),
-    "input_bg":     ("#FFFFFF", "#2C2C2E"),
+    # surfaces
+    "bg":          ("#F6F6F7", "#111113"),   # window background
+    "sidebar":     ("#FFFFFF", "#18181B"),
+    "card":        ("#FFFFFF", "#1C1C20"),
+    "card_alt":    ("#F1F1F3", "#232328"),   # inputs, chips, AI-free areas
+    "hover":       ("#ECECEF", "#2A2A30"),
+    "border":      ("#E4E4E7", "#2C2C33"),
 
     # text
-    "text":         ("#1D1D1F", "#F5F5F7"),
-    "text_dim":     ("#6E6E73", "#8E8E93"),
-    "text_accent":  ("#0071E3", "#0A84FF"),   # Apple Blue
+    "text":        ("#18181B", "#F4F4F5"),
+    "text_dim":    ("#52525B", "#A1A1AA"),
+    "text_faint":  ("#8E8E96", "#6B6B74"),
 
-    # accent
-    "accent":       "#0071E3",
-    "accent_dark":  "#0A84FF",
-    "accent_hover": "#0077ED",
-    "danger":       "#FF3B30",
-    "success":      "#34C759",
-    "warning":      "#FF9500",
+    # accent (Apple blue)
+    "accent":      ("#007AFF", "#0A84FF"),
+    "accent_hover":("#0062CC", "#3B9BFF"),
+    "accent_soft": ("#E6F0FF", "#16243A"),   # selected nav item, soft badges
+    "on_accent":   ("#FFFFFF", "#FFFFFF"),
 
-    # borders
-    "border":       ("#D2D2D7", "#3A3A3C"),
-    "divider":      ("#E5E5EA", "#38383A"),
+    # status
+    "success":     ("#16A34A", "#30D158"),
+    "success_soft":("#E7F7EC", "#13291B"),
+    "warning":     ("#D97706", "#FF9F0A"),
+    "warning_soft":("#FEF3E2", "#2E2210"),
+    "danger":      ("#DC2626", "#FF453A"),
+    "danger_hover":("#B91C1C", "#FF6961"),
+    "danger_soft": ("#FDECEC", "#2E1414"),
 
-    # badge
-    "badge_rec":    ("#34C759", "#30D158"),   # recommended
-    "badge_slow":   ("#FF9500", "#FF9F0A"),   # may be slow
+    # hardware meters
+    "m_cpu":       ("#007AFF", "#0A84FF"),
+    "m_ram":       ("#16A34A", "#30D158"),
+    "m_gpu":       ("#EA7A00", "#FF9F0A"),
+    "m_vram":      ("#E0245E", "#FF375F"),
 }
 
-FONT_FAMILY = "SF Pro Display" if ctk.get_appearance_mode() else "Inter"
+RADIUS = {"card": 14, "button": 10, "input": 12, "badge": 8, "pill": 999}
 
-RADIUS = {
-    "card": 12,
-    "button": 8,
-    "input": 10,
-    "badge": 6,
-}
+if sys.platform == "win32":
+    FONT = "Segoe UI"
+    MONO = "Consolas"
+elif sys.platform == "darwin":
+    FONT = "SF Pro Text"
+    MONO = "Menlo"
+else:
+    FONT = "DejaVu Sans"
+    MONO = "DejaVu Sans Mono"
 
 
-def apply_theme():
-    ctk.set_appearance_mode("system")
+def c(key: str):
+    """Colour pair for CTk widgets."""
+    return COLORS[key]
+
+
+def is_dark() -> bool:
+    return ctk.get_appearance_mode() == "Dark"
+
+
+def resolve(key_or_pair) -> str:
+    """Single colour string for the current mode (for plain Tk widgets)."""
+    pair = COLORS[key_or_pair] if isinstance(key_or_pair, str) else key_or_pair
+    if isinstance(pair, str):
+        return pair
+    return pair[1] if is_dark() else pair[0]
+
+
+def font(size: int = 13, weight: str = "normal", mono: bool = False) -> ctk.CTkFont:
+    return ctk.CTkFont(family=MONO if mono else FONT, size=size, weight=weight)
+
+
+def apply_theme(mode: str = "system"):
+    ctk.set_appearance_mode({"light": "light", "dark": "dark"}.get(mode, "system"))
     ctk.set_default_color_theme("blue")
 
 
-def c(key: str) -> tuple | str:
-    """Return color tuple (light, dark) or plain string."""
-    return COLORS[key]
+# ── shared widget presets ─────────────────────────────────────────────────────
+
+def primary_button(master, text="", **kw) -> ctk.CTkButton:
+    opts = dict(
+        text=text, height=38, corner_radius=RADIUS["button"],
+        fg_color=c("accent"), hover_color=c("accent_hover"),
+        text_color=c("on_accent"), font=font(13, "bold"),
+    )
+    opts.update(kw)
+    return ctk.CTkButton(master, **opts)
+
+
+def ghost_button(master, text="", **kw) -> ctk.CTkButton:
+    opts = dict(
+        text=text, height=38, corner_radius=RADIUS["button"],
+        fg_color="transparent", hover_color=c("hover"),
+        text_color=c("text"), border_width=1, border_color=c("border"),
+        font=font(13),
+    )
+    opts.update(kw)
+    return ctk.CTkButton(master, **opts)
+
+
+def danger_button(master, text="", **kw) -> ctk.CTkButton:
+    opts = dict(
+        text=text, height=38, corner_radius=RADIUS["button"],
+        fg_color=c("danger"), hover_color=c("danger_hover"),
+        text_color="#FFFFFF", font=font(13, "bold"),
+    )
+    opts.update(kw)
+    return ctk.CTkButton(master, **opts)
+
+
+def badge(master, text: str, kind: str = "accent") -> ctk.CTkLabel:
+    """Small soft-coloured pill: kind in accent/success/warning/danger."""
+    return ctk.CTkLabel(
+        master, text=f"  {text}  ", height=22, corner_radius=RADIUS["badge"],
+        fg_color=c(f"{kind}_soft"), text_color=c(kind), font=font(11, "bold"),
+    )
+
+
+def option_menu(master, values, **kw) -> ctk.CTkOptionMenu:
+    opts = dict(
+        values=values or ["—"], height=36, corner_radius=RADIUS["button"],
+        fg_color=c("card_alt"), button_color=c("card_alt"),
+        button_hover_color=c("hover"), text_color=c("text"),
+        dropdown_fg_color=c("card"), dropdown_hover_color=c("hover"),
+        dropdown_text_color=c("text"), font=font(13), dropdown_font=font(13),
+        dynamic_resizing=False,
+    )
+    opts.update(kw)
+    return ctk.CTkOptionMenu(master, **opts)
+
+
+def segmented(master, values, **kw) -> ctk.CTkSegmentedButton:
+    opts = dict(
+        values=values, height=34, corner_radius=RADIUS["button"],
+        fg_color=c("card_alt"), unselected_color=c("card_alt"),
+        unselected_hover_color=c("hover"), selected_color=c("card"),
+        selected_hover_color=c("card"), text_color=c("text"), font=font(12, "bold"),
+    )
+    opts.update(kw)
+    return ctk.CTkSegmentedButton(master, **opts)
+
+
+def page_header(master, title: str, subtitle: str = "") -> ctk.CTkFrame:
+    head = ctk.CTkFrame(master, fg_color="transparent")
+    ctk.CTkLabel(head, text=title, font=font(22, "bold"), text_color=c("text"),
+                 anchor="w").pack(anchor="w")
+    if subtitle:
+        ctk.CTkLabel(head, text=subtitle, font=font(13), text_color=c("text_dim"),
+                     anchor="w", justify="left").pack(anchor="w", pady=(2, 0))
+    return head

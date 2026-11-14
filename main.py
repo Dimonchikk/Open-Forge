@@ -2,201 +2,285 @@
 Open Forge — local AI launcher
 Entry point: python main.py
 """
-import sys
-import threading
-import tkinter as tk
-import urllib.request
 import json
+import sys
+import urllib.request
+import webbrowser
 import customtkinter as ctk
 
-from ui.theme import apply_theme, c, RADIUS
+from core import settings
+from core.ollama_client import is_ollama_running, list_local_models, OLLAMA_DOWNLOAD_URL
+from core.settings import resource_path
+from ui import bg
+from ui.icons import icon, logo
+from ui.theme import apply_theme, c, font, RADIUS
 from ui.chat_view import ChatView
 from ui.catalog_view import CatalogView
 from ui.compare_view import CompareView
 from ui.agent_view import AgentView
+from ui.settings_view import SettingsView
 from ui.hardware_panel import HardwarePanel
-from core.ollama_client import is_ollama_running
 from version import VERSION
 
+RELEASES_API = "https://api.github.com/repos/Dimonchikk/Open-Forge/releases/latest"
 
-# ── sidebar navigation ────────────────────────────────────────────────────────
-
-NAV_ITEMS = [
-    ("💬", "Чат"),
-    ("📦", "Моделі"),
-    ("⚡", "Порівняння"),
-    ("🤖", "Агент"),
+NAV = [
+    ("chat", "chat", "Чат"),
+    ("models", "models", "Моделі"),
+    ("compare", "compare", "Порівняння"),
+    ("agent", "agent", "Агент"),
 ]
 
 
 class Sidebar(ctk.CTkFrame):
-    def __init__(self, master, on_select, **kw):
-        super().__init__(master, fg_color=c("sidebar"), corner_radius=0, width=200, **kw)
-        self.pack_propagate(False)
-        self._on_select = on_select
-        self._buttons: list[ctk.CTkButton] = []
-        self._active = 0
+    def __init__(self, master, app):
+        super().__init__(master, fg_color=c("sidebar"), corner_radius=0, width=224)
+        self.grid_propagate(False)
+        self.app = app
+        self._buttons: dict[str, ctk.CTkButton] = {}
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(len(NAV) + 1, weight=1)
 
-        # logo
-        logo = ctk.CTkLabel(
-            self,
-            text="⚒ Open Forge",
-            font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
-            text_color=c("text"),
-        )
-        logo.pack(pady=(24, 20), padx=16, anchor="w")
+        brand = ctk.CTkFrame(self, fg_color="transparent")
+        brand.grid(row=0, column=0, sticky="ew", padx=18, pady=(22, 18))
+        ctk.CTkLabel(brand, text="", image=logo(30)).pack(side="left")
+        ctk.CTkLabel(brand, text="Open Forge", font=font(17, "bold"),
+                     text_color=c("text")).pack(side="left", padx=(10, 0))
 
-        for i, (icon, label) in enumerate(NAV_ITEMS):
-            btn = ctk.CTkButton(
-                self,
-                text=f"  {icon}  {label}",
-                anchor="w",
-                fg_color="transparent",
-                text_color=c("text"),
-                hover_color=c("card_hover"),
-                corner_radius=RADIUS["button"],
-                height=40,
-                font=ctk.CTkFont(family="Inter", size=13),
-                command=lambda idx=i: self._select(idx),
-            )
-            btn.pack(fill="x", padx=8, pady=2)
-            self._buttons.append(btn)
+        for i, (key, ico, label) in enumerate(NAV):
+            self._add(key, ico, label).grid(row=1 + i, column=0, sticky="ew", padx=12, pady=2)
 
-        self._select(0)
+        bottom = ctk.CTkFrame(self, fg_color="transparent")
+        bottom.grid(row=len(NAV) + 2, column=0, sticky="ew", padx=12, pady=(0, 16))
+        bottom.grid_columnconfigure(0, weight=1)
 
-    def _select(self, idx: int):
-        self._active = idx
-        for i, btn in enumerate(self._buttons):
-            if i == idx:
-                btn.configure(
-                    fg_color=c("accent"),
-                    text_color="#FFFFFF",
-                    hover_color=c("accent_hover"),
-                )
-            else:
-                btn.configure(
-                    fg_color="transparent",
-                    text_color=c("text"),
-                    hover_color=c("card_hover"),
-                )
-        self._on_select(idx)
+        self.update_btn = ctk.CTkButton(
+            bottom, text="", height=36, corner_radius=RADIUS["button"], anchor="w",
+            fg_color=c("accent_soft"), hover_color=c("hover"), text_color=c("accent"),
+            font=font(13, "bold"), image=icon("download", c("accent"), 16), compound="left")
 
+        self.status = ctk.CTkButton(
+            bottom, text="  Підключення…", height=32, anchor="w", corner_radius=RADIUS["button"],
+            fg_color="transparent", hover_color=c("hover"), text_color=c("text_dim"),
+            font=font(12), image=icon("dot", c("text_faint"), 10), compound="left",
+            command=self._status_click)
+        self.status.grid(row=1, column=0, sticky="ew", pady=(0, 4))
+        self._ollama_ok = None
 
-# ── main window ───────────────────────────────────────────────────────────────
+        self._add("settings", "settings", "Налаштування", parent=bottom).grid(
+            row=2, column=0, sticky="ew")
+        ctk.CTkLabel(bottom, text=f"версія {VERSION}", font=font(11),
+                     text_color=c("text_faint")).grid(row=3, column=0, sticky="w",
+                                                      padx=14, pady=(6, 0))
+
+    def _add(self, key, ico, label, parent=None):
+        btn = ctk.CTkButton(
+            parent or self, text=f"  {label}", height=40, anchor="w",
+            corner_radius=RADIUS["button"], font=font(14),
+            fg_color="transparent", hover_color=c("hover"), text_color=c("text"),
+            image=icon(ico, c("text_dim"), 18), compound="left",
+            command=lambda: self.app.show(key))
+        btn._icon = ico
+        self._buttons[key] = btn
+        return btn
+
+    def select(self, key: str):
+        for k, b in self._buttons.items():
+            on = k == key
+            b.configure(fg_color=c("accent_soft") if on else "transparent",
+                        text_color=c("accent") if on else c("text"),
+                        font=font(14, "bold" if on else "normal"),
+                        image=icon(b._icon, c("accent") if on else c("text_dim"), 18))
+
+    def set_ollama(self, ok: bool):
+        self._ollama_ok = ok
+        self.status.configure(
+            text="  Ollama працює" if ok else "  Ollama не запущена",
+            text_color=c("text_dim") if ok else c("warning"),
+            image=icon("dot", c("success") if ok else c("warning"), 10))
+
+    def _status_click(self):
+        if self._ollama_ok is False:
+            webbrowser.open(OLLAMA_DOWNLOAD_URL)
+        else:
+            self.app.refresh_models()
+
+    def show_update(self, version: str, url: str):
+        self.update_btn.configure(text=f"  Оновлення {version}", command=lambda: webbrowser.open(url))
+        self.update_btn.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
 
 class App(ctk.CTk):
     def __init__(self):
+        apply_theme(settings.get("theme"))
         super().__init__()
-        apply_theme()
-
         self.title("Open Forge")
-        self.geometry("1200x760")
-        self.minsize(900, 600)
+        self.geometry("1320x820")
+        self.minsize(1040, 640)
+        self.configure(fg_color=c("bg"))
+        self._set_icon()
+        bg.start(self)
 
-        # ── check Ollama ──────────────────────────────────────────────────────
-        if not is_ollama_running():
-            self._show_ollama_warning()
-
-        # ── layout ────────────────────────────────────────────────────────────
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # sidebar (left)
-        self._sidebar = Sidebar(self, on_select=self._show_view)
-        self._sidebar.grid(row=0, column=0, sticky="nsw")
+        self.sidebar = Sidebar(self, self)
+        self.sidebar.grid(row=0, column=0, sticky="nsw")
+        ctk.CTkFrame(self, width=1, fg_color=c("border"), corner_radius=0).grid(
+            row=0, column=0, sticky="nse")
 
-        # content area
         self._content = ctk.CTkFrame(self, fg_color=c("bg"), corner_radius=0)
         self._content.grid(row=0, column=1, sticky="nsew")
         self._content.grid_rowconfigure(0, weight=1)
         self._content.grid_columnconfigure(0, weight=1)
 
-        # hardware panel (right)
-        self._hw_panel = HardwarePanel(self)
-        self._hw_panel.grid(row=0, column=2, sticky="nse")
+        self.hw = HardwarePanel(self)
+        self._hw_line = ctk.CTkFrame(self, width=1, fg_color=c("border"), corner_radius=0)
+        self.set_hw_panel(settings.get("show_hw_panel"))
+        self.bind("<Configure>", self._layout_hw, add="+")
 
-        # ── views ─────────────────────────────────────────────────────────────
-        self._chat_view    = ChatView(self._content)
-        self._catalog_view = CatalogView(self._content, on_model_select=self._on_model_selected)
-        self._compare_view = CompareView(self._content)
-        self._agent_view   = AgentView(self._content)
-
-        self._views = [
-            self._chat_view,
-            self._catalog_view,
-            self._compare_view,
-            self._agent_view,
-        ]
-        for v in self._views:
+        self.views = {
+            "chat": ChatView(self._content, self),
+            "models": CatalogView(self._content, self),
+            "compare": CompareView(self._content, self),
+            "agent": AgentView(self._content, self),
+            "settings": SettingsView(self._content, self),
+        }
+        for v in self.views.values():
             v.grid(row=0, column=0, sticky="nsew")
+        self._toast = None
 
-        self._show_view(0)
+        self.show("chat")
+        self.protocol("WM_DELETE_WINDOW", self.quit_now)
+        self.refresh_models()
+        self.after(5000, self._poll_ollama)
+        self.after(3000, self.check_updates)
 
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        threading.Thread(target=self._check_updates, daemon=True).start()
+    # ── navigation ────────────────────────────────────────────────────────────
 
-    def _show_view(self, idx: int):
-        # Sidebar selects tab 0 while it is being built, before views exist.
-        for i, v in enumerate(getattr(self, "_views", [])):
-            if i == idx:
-                v.tkraise()
+    def show(self, key: str):
+        self.views[key].tkraise()
+        self.sidebar.select(key)
+        if hasattr(self.views[key], "on_show"):
+            self.views[key].on_show()
 
-    def _on_model_selected(self, model_id: str):
-        self._chat_view.set_model(model_id)
-        self._show_view(0)
-        self._sidebar._select(0)
+    def open_in_chat(self, model_name: str):
+        self.views["chat"].set_model(model_name)
+        self.show("chat")
 
-    def _show_ollama_warning(self):
-        win = ctk.CTkToplevel(self)
-        win.title("Ollama не запущена")
-        win.geometry("420x180")
-        win.grab_set()
-        ctk.CTkLabel(
-            win,
-            text="⚠️  Ollama не знайдена на цьому комп'ютері.\n\n"
-                 "Будь ласка, встанови та запусти Ollama:\nhttps://ollama.com",
-            font=ctk.CTkFont(family="Inter", size=13),
-            justify="center",
-        ).pack(expand=True, pady=20)
-        ctk.CTkButton(win, text="OK", command=win.destroy).pack(pady=(0, 16))
+    HW_MIN_WIDTH = 1200   # below this window width the system panel hides itself
 
-    def _check_updates(self):
-        try:
-            url = "https://api.github.com/repos/Dimonchikk/Open-Forge/releases/latest"
-            req = urllib.request.Request(url, headers={"User-Agent": "OpenForge/" + VERSION})
+    def set_hw_panel(self, show: bool):
+        self._hw_wanted = show
+        self._layout_hw()
+
+    def _layout_hw(self, event=None):
+        if event is not None and event.widget is not self:
+            return
+        width = self.winfo_width() if self.winfo_width() > 1 else 1320
+        visible = self._hw_wanted and width / self._get_window_scaling() >= self.HW_MIN_WIDTH
+        if visible == self.hw.winfo_ismapped():
+            return
+        if visible:
+            self.hw.grid(row=0, column=2, sticky="nse")
+            self._hw_line.grid(row=0, column=2, sticky="nsw")
+        else:
+            self.hw.grid_forget()
+            self._hw_line.grid_forget()
+
+    # ── Ollama / models ───────────────────────────────────────────────────────
+
+    def refresh_models(self):
+        def fetch():
+            ok = is_ollama_running()
+            return ok, (list_local_models() if ok else [])
+        bg.run(fetch, on_done=self._apply_models)
+
+    def _apply_models(self, res):
+        ok, models = res
+        self.sidebar.set_ollama(ok)
+        names = [m["name"] for m in models]
+        self.views["chat"].set_models(names, ok)
+        self.views["compare"].set_models(names, ok)
+        self.views["agent"].set_models(names, ok)
+        self.views["models"].set_models(models, ok)
+        self.views["settings"].set_ollama(ok, len(models))
+
+    def _poll_ollama(self):
+        def check():
+            return is_ollama_running()
+
+        def got(ok):
+            if ok != self.sidebar._ollama_ok:
+                self.refresh_models()
+            self.after(5000, self._poll_ollama)
+
+        bg.run(check, on_done=got, on_error=lambda e: self.after(5000, self._poll_ollama))
+
+    # ── updates ───────────────────────────────────────────────────────────────
+
+    def check_updates(self, manual=False, done=None):
+        def fetch():
+            req = urllib.request.Request(RELEASES_API, headers={"User-Agent": "OpenForge/" + VERSION})
             with urllib.request.urlopen(req, timeout=8) as r:
                 data = json.loads(r.read())
-            latest = data.get("tag_name", "").lstrip("vV")
-            if latest and latest != VERSION:
-                self.after(0, lambda: self._show_update_banner(latest, data.get("html_url", "")))
+            return data.get("tag_name", "").lstrip("vV"), data.get("html_url", "")
+
+        def ok(res):
+            latest, url = res
+            if latest and _newer(latest, VERSION):
+                self.sidebar.show_update(latest, url)
+            if done:
+                done(latest or None)
+
+        bg.run(fetch, on_done=ok, on_error=lambda e: done(None) if done else None)
+
+    # ── toast ─────────────────────────────────────────────────────────────────
+
+    def toast(self, text: str, kind: str = "accent"):
+        if self._toast:
+            self._toast.destroy()
+        t = ctk.CTkFrame(self._content, fg_color=c("card"), corner_radius=RADIUS["card"],
+                         border_width=1, border_color=c("border"))
+        ico = {"success": "check", "danger": "x"}.get(kind, "dot")
+        ctk.CTkLabel(t, text=f"  {text}", font=font(13), text_color=c("text"),
+                     image=icon(ico, c(kind), 16), compound="left").pack(padx=16, pady=10)
+        t.place(relx=0.5, rely=0.0, anchor="n", y=18)
+        self._toast = t
+        self.after(4000, lambda: t.destroy() if t.winfo_exists() else None)
+
+    # ── misc ──────────────────────────────────────────────────────────────────
+
+    def _set_icon(self):
+        try:
+            if sys.platform == "win32":
+                ico = str(resource_path("assets/icon.ico"))
+                self.iconbitmap(ico)
+                # CustomTkinter resets the icon ~200 ms after start; set it again after that
+                self.after(300, lambda: self.iconbitmap(ico))
+            else:
+                from PIL import ImageTk, Image
+                self._icon_img = ImageTk.PhotoImage(Image.open(resource_path("assets/icon.png")))
+                self.iconphoto(True, self._icon_img)
         except Exception:
             pass
 
-    def _show_update_banner(self, latest: str, url: str):
-        banner = ctk.CTkFrame(self, fg_color=c("accent"), corner_radius=8, height=36)
-        banner.place(relx=0.5, rely=1.0, anchor="s", relwidth=0.6, y=-12)
-        ctk.CTkLabel(
-            banner,
-            text=f"⬆  Доступне оновлення v{latest}",
-            font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
-            text_color="#ffffff",
-        ).pack(side="left", padx=14, pady=6)
-        import webbrowser
-        ctk.CTkButton(
-            banner,
-            text="Завантажити",
-            height=24,
-            font=ctk.CTkFont(family="Inter", size=12),
-            command=lambda: webbrowser.open(url),
-        ).pack(side="right", padx=8, pady=6)
-
-    def _on_close(self):
-        self._hw_panel.stop()
+    def quit_now(self):
+        self.hw.stop()
         self.destroy()
 
 
-# ── run ───────────────────────────────────────────────────────────────────────
+def _newer(a: str, b: str) -> bool:
+    def parts(v):
+        return [int(x) if x.isdigit() else 0 for x in v.split(".")]
+    return parts(a) > parts(b)
+
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    if sys.platform == "win32":
+        try:  # crisp text on high-DPI screens and a proper taskbar icon
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Dimonchikk.OpenForge")
+        except Exception:
+            pass
+    App().mainloop()

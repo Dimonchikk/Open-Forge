@@ -39,7 +39,7 @@ def fmt(line):
 user = repo.split("/")[0].lower()
 name = repo.split("/")[1]
 site = f"https://{user}.github.io/{name}/"
-download = f"https://github.com/{repo}/releases/download/{tag}/OpenForge.exe"
+download = f"https://github.com/{repo}/releases/download/{tag}/OpenForge-setup.exe"
 
 text = f"⚒ <b>Open Forge {html.escape(version)}</b>\n\n<b>Що нового:</b>\n" + "\n".join(fmt(l) for l in lines)
 text += "\n\nЗавантаж інсталятор кнопкою нижче й запусти його."

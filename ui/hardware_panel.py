@@ -1,106 +1,110 @@
-"""Right-side hardware monitor: CPU, RAM, GPU util, GPU mem."""
-import threading
-import time
+"""Right-hand system monitor: CPU, RAM, GPU, VRAM with a 60-second sparkline."""
+from collections import deque
 import customtkinter as ctk
-from ui.theme import c, RADIUS
-from core.hardware import get_snapshot
+
+from core.hardware import get_snapshot, get_system_info
+from ui.theme import c, font, resolve, RADIUS
+
+HISTORY = 60
 
 
-class RingMeter(ctk.CTkCanvas):
-    """Thin arc ring showing a percentage."""
+def _blend(fg: str, bg: str, a: float) -> str:
+    f = [int(fg[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(bg[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(b[i] + (f[i] - b[i]) * a):02x}" for i in range(3))
 
-    SIZE = 68
-    THICKNESS = 7
 
-    def __init__(self, master, label: str, color: str, **kw):
-        super().__init__(
-            master,
-            width=self.SIZE,
-            height=self.SIZE + 20,
-            bg=master.cget("fg_color")[1] if isinstance(master.cget("fg_color"), (list, tuple)) else master.cget("fg_color"),
-            highlightthickness=0,
-            **kw,
-        )
-        self._label = label
-        self._color = color
-        self._pct = 0.0
-        self._draw()
+class _Meter(ctk.CTkFrame):
+    def __init__(self, master, title: str, color_key: str):
+        super().__init__(master, fg_color=c("card_alt"), corner_radius=RADIUS["card"])
+        self._color_key = color_key
+        self._hist = deque([0.0] * HISTORY, maxlen=HISTORY)
+        self.grid_columnconfigure(0, weight=1)
 
-    def set_value(self, pct: float):
-        self._pct = max(0.0, min(100.0, pct))
-        self._draw()
+        ctk.CTkLabel(self, text=title, font=font(12, "bold"), text_color=c("text_dim"),
+                     anchor="w").grid(row=0, column=0, sticky="w", padx=(12, 0), pady=(10, 0))
+        self._value = ctk.CTkLabel(self, text="—", font=font(17, "bold"),
+                                   text_color=c(color_key), anchor="e")
+        self._value.grid(row=0, column=1, sticky="e", padx=(0, 12), pady=(8, 0))
+        self._sub = ctk.CTkLabel(self, text="", font=font(11), text_color=c("text_faint"),
+                                 anchor="w", height=16)
+        self._sub.grid(row=1, column=0, columnspan=2, sticky="w", padx=12)
+        self._spark = ctk.CTkCanvas(self, height=34, highlightthickness=0, bd=0)
+        self._spark.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(4, 10))
 
-    def _draw(self):
-        self.delete("all")
-        s = self.SIZE
-        t = self.THICKNESS
-        pad = 4
+    def update_value(self, pct, sub: str):
+        if pct is None:
+            self._value.configure(text="—")
+            self._hist.append(0.0)
+        else:
+            self._value.configure(text=f"{pct:.0f}%")
+            self._hist.append(max(0.0, min(100.0, pct)))
+        self._sub.configure(text=sub)
+        self._paint(pct is not None)
 
-        # background ring
-        self.create_arc(
-            pad, pad, s - pad, s - pad,
-            start=90, extent=360,
-            outline="#E5E5EA", width=t, style="arc",
-        )
-        # value ring
-        extent = -self._pct / 100 * 359.9
-        self.create_arc(
-            pad, pad, s - pad, s - pad,
-            start=90, extent=extent,
-            outline=self._color, width=t, style="arc",
-        )
-        # percentage text
-        self.create_text(
-            s // 2, s // 2,
-            text=f"{int(self._pct)}%",
-            font=("Inter", 11, "bold"),
-            fill=self._color,
-        )
-        # label below
-        self.create_text(
-            s // 2, s + 10,
-            text=self._label,
-            font=("Inter", 10),
-            fill="#8E8E93",
-        )
+    def _paint(self, live: bool):
+        cv = self._spark
+        bg = resolve("card_alt")
+        col = resolve(self._color_key)
+        cv.configure(bg=bg)
+        cv.delete("all")
+        w = max(cv.winfo_width(), 10)
+        h = int(cv.cget("height"))
+        cv.create_line(0, h - 1, w, h - 1, fill=_blend(resolve("text_faint"), bg, 0.25))
+        if not live:
+            return
+        step = w / (HISTORY - 1)
+        pts = [(i * step, h - 2 - v / 100 * (h - 4)) for i, v in enumerate(self._hist)]
+        area = [(0, h)] + pts + [(w, h)]
+        cv.create_polygon(*[x for p in area for x in p], fill=_blend(col, bg, 0.18), outline="")
+        cv.create_line(*[x for p in pts for x in p], fill=col, width=2, smooth=True)
 
 
 class HardwarePanel(ctk.CTkFrame):
     def __init__(self, master, **kw):
-        super().__init__(master, fg_color=c("sidebar"), corner_radius=0, width=140, **kw)
-        self.pack_propagate(False)
+        super().__init__(master, fg_color=c("sidebar"), corner_radius=0, width=232, **kw)
+        self.grid_propagate(False)
+        self.grid_columnconfigure(0, weight=1)
+        info = get_system_info()
+        self._info = info
 
-        title = ctk.CTkLabel(
-            self,
-            text="Система",
-            font=ctk.CTkFont(family="Inter", size=13, weight="bold"),
-            text_color=c("text"),
-        )
-        title.pack(pady=(16, 10))
+        ctk.CTkLabel(self, text="Система", font=font(15, "bold"), text_color=c("text"),
+                     anchor="w").grid(row=0, column=0, sticky="w", padx=16, pady=(22, 0))
+        gpu = info["gpu_name"] or "Відеокарту не визначено"
+        ctk.CTkLabel(self, text=gpu, font=font(11), text_color=c("text_faint"), anchor="w",
+                     wraplength=200, justify="left").grid(row=1, column=0, sticky="w", padx=16)
 
-        self._cpu_ring  = RingMeter(self, "CPU",     "#0A84FF")
-        self._ram_ring  = RingMeter(self, "RAM",     "#34C759")
-        self._gpu_ring  = RingMeter(self, "GPU",     "#FF9F0A")
-        self._gmem_ring = RingMeter(self, "VRAM",    "#FF375F")
-
-        for r in (self._cpu_ring, self._ram_ring, self._gpu_ring, self._gmem_ring):
-            r.pack(pady=8)
+        self._cpu = _Meter(self, "Процесор", "m_cpu")
+        self._ram = _Meter(self, "Пам'ять", "m_ram")
+        self._gpu = _Meter(self, "Відеокарта", "m_gpu")
+        self._vram = _Meter(self, "Відеопам'ять", "m_vram")
+        for i, m in enumerate((self._cpu, self._ram, self._gpu, self._vram)):
+            m.grid(row=2 + i, column=0, sticky="ew", padx=12, pady=(12 if i == 0 else 8, 0))
 
         self._running = True
-        self._thread = threading.Thread(target=self._poll, daemon=True)
-        self._thread.start()
+        self.after(300, self._tick)
 
-    def _poll(self):
-        while self._running:
-            snap = get_snapshot()
-            self.after(0, self._update, snap)
-            time.sleep(1)
-
-    def _update(self, snap: dict):
-        self._cpu_ring.set_value(snap["cpu"])
-        self._ram_ring.set_value(snap["ram"])
-        self._gpu_ring.set_value(snap["gpu_util"])
-        self._gmem_ring.set_value(snap["gpu_mem"])
+    def _tick(self):
+        if not self._running:
+            return
+        try:
+            s = get_snapshot()
+            cores = self._info["cpu_threads"]
+            self._cpu.update_value(s["cpu"], f"{cores} потоків")
+            self._ram.update_value(s["ram"], f"{s['ram_used_gb']:.1f} з {s['ram_total_gb']:.0f} ГБ")
+            if s["gpu_util"] is None:
+                self._gpu.update_value(None, "доступно лише для NVIDIA")
+            else:
+                self._gpu.update_value(s["gpu_util"], "навантаження")
+            if s["vram"] is None:
+                total = s["vram_total_gb"]
+                self._vram.update_value(None, f"усього {total:.0f} ГБ" if total else "немає даних")
+            else:
+                self._vram.update_value(
+                    s["vram"], f"{s['vram_used_gb']:.1f} з {s['vram_total_gb']:.0f} ГБ")
+        except Exception:
+            pass
+        self.after(1000, self._tick)
 
     def stop(self):
         self._running = False

@@ -1,7 +1,7 @@
 # Open Forge — автоматичне збирання на GitHub.
 # Вкладка Actions → «Збирання» → «Run workflow»:
 # • поле «Версія» порожнє — пробне збирання, файл з'явиться внизу сторінки запуску в «Artifacts»;
-# • у полі «Версія» число (наприклад 1.0.0) — GitHub збере OpenForge-setup.exe і створить ЧЕРНЕТКУ релізу v1.0.0
+# • у полі «Версія» число (наприклад 1.1.0) — GitHub збере OpenForge-setup.exe (інсталятор) і створить ЧЕРНЕТКУ релізу v1.0.0
 #   з описом із CHANGES.md (розділ «## 1.0.0»). Перевір файл і натисни «Publish release» — тоді його почне
 #   видавати сайт, програми самі запропонують оновитися, а в Telegram-канал піде допис (telegram.yml).
 name: Збирання
@@ -39,18 +39,32 @@ jobs:
           # PyInstaller мовчки викидає модулі з помилками, тому перевіряємо заздалегідь.
           python -m compileall -q main.py version.py ui core agent models_db
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          python -c "import ui.theme, ui.hardware_panel, ui.catalog_view, ui.chat_view, ui.compare_view, ui.agent_view, core.ollama_client, core.hardware, agent.agent_core, models_db.catalog; print('imports ok')"
+          # main імпортує всі вікна, налаштування, видалення тощо — якщо щось зламано, впаде тут
+          python -c "import main; print('imports ok')"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Зібрати програму
         shell: powershell
         run: |
           pyinstaller OpenForge.spec
 
-      - name: Зберегти файл
+      - name: Зібрати інсталятор
+        shell: powershell
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          $ver = (Select-String -Path version.py -Pattern '"([^"]+)"').Matches[0].Groups[1].Value
+          & $iscc "/DAppVersion=$ver" installer.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-Item dist\OpenForge-setup.exe | Select-Object Name, Length
+
+      - name: Зберегти файли
         uses: actions/upload-artifact@v4
         with:
-          name: OpenForge-exe
-          path: dist/OpenForge.exe
+          name: OpenForge
+          path: |
+            dist/OpenForge-setup.exe
+            dist/OpenForge.exe
 
       - name: Створити чернетку релізу
         if: inputs.version != ''
@@ -71,7 +85,7 @@ jobs:
             if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
               gh release edit "$TAG" --target "$GITHUB_SHA" --notes-file notes.md
             fi
-            gh release upload "$TAG" dist/OpenForge.exe --clobber
+            gh release upload "$TAG" dist/OpenForge-setup.exe --clobber
           else
-            gh release create "$TAG" dist/OpenForge.exe --draft --target "$GITHUB_SHA" --title "Open Forge $VER" --notes-file notes.md
+            gh release create "$TAG" dist/OpenForge-setup.exe --draft --target "$GITHUB_SHA" --title "Open Forge $VER" --notes-file notes.md
           fi
