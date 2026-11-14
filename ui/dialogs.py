@@ -30,9 +30,10 @@ class Dialog(ctk.CTkToplevel):
     def show(self):
         top = self.master.winfo_toplevel()
         self.update_idletasks()
-        h = self.winfo_reqheight()
-        x = top.winfo_rootx() + (top.winfo_width() - self._width) // 2
-        y = top.winfo_rooty() + (top.winfo_height() - h) // 3
+        scale = self._get_window_scaling()
+        h = round(self.winfo_reqheight() / scale)          # geometry() takes logical units
+        x = top.winfo_rootx() + (top.winfo_width() - round(self._width * scale)) // 2
+        y = top.winfo_rooty() + (top.winfo_height() - round(h * scale)) // 3
         self.geometry(f"{self._width}x{h}+{max(x, 0)}+{max(y, 0)}")
         self.deiconify()
         self.lift()

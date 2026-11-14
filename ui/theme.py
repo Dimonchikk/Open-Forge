@@ -73,6 +73,18 @@ def resolve(key_or_pair) -> str:
     return pair[1] if is_dark() else pair[0]
 
 
+def logical(widget, px: float) -> float:
+    """Physical pixels (event.width, winfo_width) → CustomTkinter's logical units.
+
+    CTk multiplies wraplength / padx / sizes by the display scaling (125 %, 150 % …),
+    so anything derived from a measured width must be divided by it first.
+    """
+    try:
+        return px / widget._get_widget_scaling()
+    except Exception:
+        return px
+
+
 def font(size: int = 13, weight: str = "normal", mono: bool = False) -> ctk.CTkFont:
     return ctk.CTkFont(family=MONO if mono else FONT, size=size, weight=weight)
 

@@ -7,7 +7,7 @@ import customtkinter as ctk
 from core.ollama_client import chat_stream, tokens_per_second
 from ui.icons import icon
 from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu, page_header,
-                      badge)
+                      badge, logical)
 
 _THINK_RE = re.compile(r"<think>.*?(</think>|$)", re.S)
 LETTERS = "ABC"
@@ -42,7 +42,8 @@ class _Side(ctk.CTkFrame):
         self.answer = ctk.CTkLabel(self.scroll, text="", font=font(14), text_color=c("text_faint"),
                                    justify="left", anchor="nw", wraplength=300)
         self.answer.grid(row=0, column=0, sticky="nw", padx=10, pady=4)
-        self.bind("<Configure>", lambda e: self.answer.configure(wraplength=max(e.width - 48, 160)))
+        self.bind("<Configure>",
+                  lambda e: self.answer.configure(wraplength=max(logical(self, e.width) - 48, 160)))
 
         self.foot = ctk.CTkFrame(self, fg_color="transparent", height=34)
         self.foot.grid(row=2, column=0, sticky="ew", padx=14, pady=(4, 12))

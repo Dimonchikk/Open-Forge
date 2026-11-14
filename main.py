@@ -157,6 +157,7 @@ class App(ctk.CTk):
         self.bind("<Configure>", self._on_root_configure, add="+")
 
         self.show("chat")
+        self.after(300, self._layout_hw)
         self.protocol("WM_DELETE_WINDOW", self.quit_now)
         self.refresh_models()
         self.after(5000, self._poll_ollama)
@@ -177,7 +178,7 @@ class App(ctk.CTk):
             self.views[key].on_show()
 
     def _on_root_configure(self, event):
-        if event.widget is not self:
+        if event.widget is not self:      # Tk also reports every child widget here
             return
         self._layout_hw()
         w, h = event.width, event.height
@@ -207,8 +208,9 @@ class App(ctk.CTk):
         self._layout_hw()
 
     def _layout_hw(self):
-        width = self.winfo_width() if self.winfo_width() > 1 else 1320
-        visible = self._hw_wanted and width / self._get_window_scaling() >= self.HW_MIN_WIDTH
+        # CTk keeps the window size in logical units (independent of display scaling)
+        width = getattr(self, "_current_width", 1320)
+        visible = self._hw_wanted and width >= self.HW_MIN_WIDTH
         if visible == self.hw.winfo_ismapped():
             return
         if visible:

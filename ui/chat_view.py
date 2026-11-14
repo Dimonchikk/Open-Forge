@@ -15,7 +15,8 @@ from core.ollama_client import chat_stream, tokens_per_second
 from ui import bg
 from ui.dialogs import Dialog, confirm
 from ui.icons import icon, logo
-from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu, segmented)
+from ui.theme import (c, font, RADIUS, primary_button, ghost_button, option_menu, segmented,
+                      logical)
 
 PERMS = {
     "Питати завжди": (PermissionLevel.MANUAL, "Кожну дію агента ти підтверджуєш сам.", "text_dim"),
@@ -230,16 +231,16 @@ class ChatView(ctk.CTkFrame):
         self._render_empty()
 
     def _on_resize(self, event):
-        width = event.width
-        side = max(16, (width - MAX_COL) // 2)
-        self._col.grid_configure(padx=side)
+        width = logical(self, event.width)
+        side = max(16, int(width - MAX_COL) // 2)
+        self._col.grid(padx=side)
         col_w = min(width - 2 * side, MAX_COL)
         for lbl, kind in self._labels:
             try:
                 lbl.configure(wraplength=int(col_w * 0.72) if kind == "user" else col_w - 8)
             except Exception:
                 pass
-        self._foot.grid_configure(padx=max(24, (self.winfo_width() - MAX_COL) // 2))
+        self._foot.grid(padx=max(24, int(logical(self, self.winfo_width()) - MAX_COL) // 2))
 
     # ── public API used by App ────────────────────────────────────────────────
 
@@ -385,8 +386,8 @@ class ChatView(ctk.CTkFrame):
     # ── messages ──────────────────────────────────────────────────────────────
 
     def _col_width(self) -> int:
-        w = self._scroll.winfo_width() or 800
-        side = max(16, (w - MAX_COL) // 2)
+        w = logical(self, self._scroll.winfo_width()) if self._scroll.winfo_width() > 1 else 800
+        side = max(16, int(w - MAX_COL) // 2)
         return min(w - 2 * side, MAX_COL)
 
     def _add_user(self, text: str):

@@ -9,7 +9,7 @@ from ui import bg
 from ui.dialogs import confirm
 from ui.icons import icon
 from ui.theme import (c, font, RADIUS, primary_button, ghost_button, badge, segmented,
-                      page_header)
+                      page_header, logical)
 
 FIT_BADGE = {
     FIT_FAST: ("Рекомендовано", "success"),
@@ -86,7 +86,7 @@ class CatalogView(ctk.CTkFrame):
         self._legend.grid(row=2, column=0, sticky="ew", padx=30, pady=(10, 2))
         # wrap to the page width (binding to the label itself would feed back into its size)
         self.bind("<Configure>",
-                  lambda e: self._legend.configure(wraplength=max(e.width - 70, 300)), add="+")
+                  lambda e: self._legend.configure(wraplength=max(logical(self, e.width) - 70, 300)), add="+")
 
         self._scroll = ctk.CTkScrollableFrame(self, fg_color="transparent",
                                               scrollbar_button_color=c("border"))
@@ -207,7 +207,8 @@ class CatalogView(ctk.CTkFrame):
         desc = ctk.CTkLabel(card, text=m["description"], font=font(13), text_color=c("text_dim"),
                             anchor="w", justify="left", wraplength=360)
         desc.grid(row=3, column=0, sticky="ew", padx=16, pady=(4, 0))
-        card.bind("<Configure>", lambda e, d=desc: d.configure(wraplength=max(e.width - 36, 200)))
+        card.bind("<Configure>",
+                  lambda e, d=desc: d.configure(wraplength=max(logical(card, e.width) - 36, 200)))
         ctk.CTkLabel(card, text=m["id"], font=font(11, mono=True), text_color=c("text_faint"),
                      anchor="w").grid(row=4, column=0, sticky="w", padx=16, pady=(6, 0))
 
