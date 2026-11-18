@@ -82,16 +82,55 @@ namespace OpenForge
             }
         }
 
+        // Версії 1.x (на Python) ставились інсталятором Inno Setup з цим AppId.
+        const string PythonKey = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}_is1";
+
+        // Команда видалення старої версії 1.x або null, якщо її немає.
+        static string PythonUninstaller()
+        {
+            foreach (var hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
+                foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+                {
+                    try
+                    {
+                        using (var root = RegistryKey.OpenBaseKey(hive, view))
+                        using (var k = root.OpenSubKey(PythonKey))
+                        {
+                            string u = k != null ? k.GetValue("UninstallString") as string : null;
+                            if (!string.IsNullOrEmpty(u) && File.Exists(u.Trim('"'))) return u.Trim('"');
+                        }
+                    }
+                    catch { }
+                }
+            return null;
+        }
+
+        // Тихо прибрати версію 1.x: програму і її ярлики. Налаштування, Ollama й моделі не чіпаються.
+        static void RemovePython(string uninstaller)
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(uninstaller, "/SILENT /SUPPRESSMSGBOXES /NORESTART");
+                psi.UseShellExecute = true;   // якщо стару ставили «для всіх», Windows попросить дозвіл
+                using (var p = Process.Start(psi)) if (p != null) p.WaitForExit(120000);
+                Thread.Sleep(1500);   // Inno Setup дочищає папку вже після виходу
+            }
+            catch { }
+        }
+
         public static void Install()
         {
             string me = Application.ExecutablePath;
             string exe = Path.Combine(Dir, ExeName);
             bool update = File.Exists(exe);
+            string old = PythonUninstaller();
+            string oldNote = old != null ? "\n\nСтару версію Open Forge 1.x буде видалено — Ollama, моделі й налаштування залишаться." : "";
             if (MessageBox.Show(update
-                    ? "Оновити Open Forge до версії " + AppVersion.Text + "?\n\nПрограма закриється й запуститься знову. Налаштування, чати й моделі збережуться."
-                    : "Встановити Open Forge " + AppVersion.Text + "?\n\nПрограма встановиться в " + Dir + ", з'являться ярлики на Робочому столі й у меню «Пуск».",
+                    ? "Оновити Open Forge до версії " + AppVersion.Text + "?\n\nПрограма закриється й запуститься знову. Налаштування, чати й моделі збережуться." + oldNote
+                    : "Встановити Open Forge " + AppVersion.Text + "?\n\nПрограма встановиться в " + Dir + ", з'являться ярлики на Робочому столі й у меню «Пуск»." + oldNote,
                     Title, MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             CloseOthers();
+            if (old != null) RemovePython(old);
             try { Directory.CreateDirectory(Dir); }
             catch (Exception ex) { Fail("Не вдалося створити папку " + Dir + ":\n" + ex.Message); return; }
             if (!string.Equals(Path.GetFullPath(me), Path.GetFullPath(exe), StringComparison.OrdinalIgnoreCase) && !CopyWithRetry(me, exe))
