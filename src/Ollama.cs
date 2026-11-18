@@ -1,0 +1,241 @@
+// Open Forge — розмова з Ollama через її HTTP API (http://127.0.0.1:11434).
+// Усі виклики блокуючі й робляться лише з фонових потоків. Відповідь моделі (NDJSON, рядок на токен)
+// складається в ChatStream, а вікно забирає накопичений текст таймером кілька разів на секунду —
+// тому навіть дуже довга відповідь не підвішує інтерфейс.
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Threading;
+using System.Web.Script.Serialization;
+
+namespace OpenForge
+{
+    class ModelInfo
+    {
+        public string Name;
+        public long Size;              // байти на диску
+        public string Family, Params, Quant;
+        public double SizeGb { get { return Size / 1073741824.0; } }
+    }
+
+    class Turn
+    {
+        public string Role, Content;   // "system", "user", "assistant"
+        public Turn(string role, string content) { Role = role; Content = content; }
+    }
+
+    // Одна відповідь моделі, що надходить частинами. Пише фоновий потік, читає вікно.
+    class ChatStream
+    {
+        readonly StringBuilder buf = new StringBuilder();
+        readonly object sync = new object();
+        int version;
+        volatile bool cancel;
+        HttpWebRequest req;
+
+        public volatile bool Done;
+        public string Error;
+        public long EvalCount, EvalNs, TotalNs;
+        public DateTime Started = DateTime.UtcNow, FirstToken, Finished;
+
+        public void Append(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return;
+            lock (sync)
+            {
+                if (buf.Length == 0) FirstToken = DateTime.UtcNow;
+                buf.Append(s);
+                version++;
+            }
+        }
+
+        // Текст, якщо він змінився з минулого разу (seen — номер, який бачило вікно).
+        public string TakeIfChanged(ref int seen)
+        {
+            lock (sync)
+            {
+                if (version == seen) return null;
+                seen = version;
+                return buf.ToString();
+            }
+        }
+
+        public string Text { get { lock (sync) return buf.ToString(); } }
+
+        public bool Cancelled { get { return cancel; } }
+
+        public void Cancel()
+        {
+            cancel = true;
+            var r = req;
+            if (r != null) try { r.Abort(); } catch { }
+        }
+
+        internal void Attach(HttpWebRequest r) { req = r; if (cancel) try { r.Abort(); } catch { } }
+
+        // Швидкість генерації за даними самої Ollama (токенів за секунду), 0 — невідомо.
+        public double TokensPerSecond { get { return EvalNs > 0 ? EvalCount / (EvalNs / 1e9) : 0; } }
+    }
+
+    static class Ollama
+    {
+        public static string Host = "http://127.0.0.1:11434";
+        static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+
+        static HttpWebRequest Request(string path, string method, int timeoutMs)
+        {
+            var req = (HttpWebRequest)WebRequest.Create(Host + path);
+            req.Method = method;
+            req.Proxy = null;   // локальний сервер — без системного проксі (інакше бувають секундні затримки)
+            req.UserAgent = "OpenForge/" + AppVersion.Text;
+            req.Timeout = timeoutMs;
+            req.ReadWriteTimeout = timeoutMs;
+            req.KeepAlive = false;
+            return req;
+        }
+
+        static string GetText(string path, int timeoutMs)
+        {
+            var req = Request(path, "GET", timeoutMs);
+            using (var resp = req.GetResponse())
+            using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                return sr.ReadToEnd();
+        }
+
+        static Dictionary<string, object> Obj(object o) { return o as Dictionary<string, object>; }
+
+        static string Str(Dictionary<string, object> d, string key)
+        {
+            object v;
+            return d != null && d.TryGetValue(key, out v) && v != null ? Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture) : null;
+        }
+
+        static long Num(Dictionary<string, object> d, string key)
+        {
+            object v;
+            if (d == null || !d.TryGetValue(key, out v) || v == null) return 0;
+            try { return Convert.ToInt64(v, System.Globalization.CultureInfo.InvariantCulture); } catch { return 0; }
+        }
+
+        // Версія запущеної Ollama або null, якщо вона не відповідає.
+        public static string Version()
+        {
+            try { return Str(Obj(Json.DeserializeObject(GetText("/api/version", 2500))), "version"); }
+            catch { return null; }
+        }
+
+        // Встановлені моделі (за абеткою). null — Ollama не відповіла.
+        public static List<ModelInfo> Models()
+        {
+            try
+            {
+                var root = Obj(Json.DeserializeObject(GetText("/api/tags", 5000)));
+                var list = new List<ModelInfo>();
+                object arr;
+                if (root != null && root.TryGetValue("models", out arr) && arr is object[])
+                {
+                    foreach (object o in (object[])arr)
+                    {
+                        var m = Obj(o);
+                        if (m == null) continue;
+                        var det = Obj(m.ContainsKey("details") ? m["details"] : null);
+                        list.Add(new ModelInfo
+                        {
+                            Name = Str(m, "name") ?? Str(m, "model") ?? "?",
+                            Size = Num(m, "size"),
+                            Family = Str(det, "family"),
+                            Params = Str(det, "parameter_size"),
+                            Quant = Str(det, "quantization_level"),
+                        });
+                    }
+                }
+                list.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                return list;
+            }
+            catch { return null; }
+        }
+
+        // Надіслати розмову й складати відповідь у stream. Блокує до кінця відповіді — викликати з фонового потоку.
+        // Інструкція для моделі (system) іде першим повідомленням з роллю «system»: окреме поле «system»
+        // в /api/chat Ollama ігнорує.
+        public static void Chat(string model, string system, IList<Turn> history, ChatStream stream)
+        {
+            try
+            {
+                var msgs = new List<object>();
+                if (!string.IsNullOrEmpty(system) && system.Trim().Length > 0)
+                    msgs.Add(new Dictionary<string, object> { { "role", "system" }, { "content", system } });
+                foreach (var t in history)
+                    msgs.Add(new Dictionary<string, object> { { "role", t.Role }, { "content", t.Content } });
+                var body = new Dictionary<string, object> { { "model", model }, { "messages", msgs }, { "stream", true } };
+                byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
+
+                // Перша відповідь може йти довго (модель вантажиться у відеопам'ять), тож таймаут великий.
+                var req = Request("/api/chat", "POST", 10 * 60 * 1000);
+                req.ContentType = "application/json";
+                req.ContentLength = data.Length;
+                stream.Attach(req);
+                using (var rs = req.GetRequestStream()) rs.Write(data, 0, data.Length);
+                using (var resp = req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                {
+                    string line;
+                    while (!stream.Cancelled && (line = sr.ReadLine()) != null)
+                    {
+                        if (line.Length == 0) continue;
+                        var d = Obj(Json.DeserializeObject(line));
+                        if (d == null) continue;
+                        string err = Str(d, "error");
+                        if (err != null) { stream.Error = err; break; }
+                        var msg = Obj(d.ContainsKey("message") ? d["message"] : null);
+                        stream.Append(Str(msg, "content"));
+                        if (d.ContainsKey("done") && d["done"] is bool && (bool)d["done"])
+                        {
+                            stream.EvalCount = Num(d, "eval_count");
+                            stream.EvalNs = Num(d, "eval_duration");
+                            stream.TotalNs = Num(d, "total_duration");
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (WebException ex)
+            {
+                if (!stream.Cancelled) stream.Error = Explain(ex);
+            }
+            catch (Exception ex)
+            {
+                if (!stream.Cancelled) stream.Error = ex.Message;
+            }
+            finally
+            {
+                stream.Finished = DateTime.UtcNow;
+                stream.Done = true;
+            }
+        }
+
+        // Зрозуміле пояснення помилки замість технічного тексту.
+        static string Explain(WebException ex)
+        {
+            var resp = ex.Response as HttpWebResponse;
+            if (resp != null)
+            {
+                try
+                {
+                    using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                    {
+                        string e = Str(Obj(Json.DeserializeObject(sr.ReadToEnd())), "error");
+                        if (!string.IsNullOrEmpty(e)) return e;
+                    }
+                }
+                catch { }
+                return "Ollama відповіла помилкою " + (int)resp.StatusCode + ".";
+            }
+            if (ex.Status == WebExceptionStatus.ConnectFailure) return "Ollama не запущена. Запусти її й спробуй ще раз.";
+            if (ex.Status == WebExceptionStatus.Timeout) return "Модель надто довго не відповідала.";
+            return ex.Message;
+        }
+    }
+}

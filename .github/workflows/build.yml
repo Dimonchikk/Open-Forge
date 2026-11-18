@@ -1,8 +1,8 @@
 # Open Forge — автоматичне збирання на GitHub.
 # Вкладка Actions → «Збирання» → «Run workflow»:
 # • поле «Версія» порожнє — пробне збирання, файл з'явиться внизу сторінки запуску в «Artifacts»;
-# • у полі «Версія» число (наприклад 1.1.0) — GitHub збере OpenForge-setup.exe (інсталятор) і створить ЧЕРНЕТКУ релізу v1.0.0
-#   з описом із CHANGES.md (розділ «## 1.0.0»). Перевір файл і натисни «Publish release» — тоді його почне
+# • у полі «Версія» число (наприклад 2.0) — GitHub збере OpenForge-setup.exe і створить ЧЕРНЕТКУ релізу v2.0
+#   з описом із CHANGES.md (розділ «## 2.0»). Перевір файл і натисни «Publish release» — тоді його почне
 #   видавати сайт, програми самі запропонують оновитися, а в Telegram-канал піде допис (telegram.yml).
 name: Збирання
 
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Версія для релізу (наприклад 1.0.0). Порожньо — лише пробне збирання.'
+        description: 'Версія для релізу (наприклад 2.0). Порожньо — лише пробне збирання.'
         required: false
         default: ''
 
@@ -23,48 +23,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Встановити Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Встановити залежності
+      - name: Зібрати програму й інсталятор
         shell: powershell
         run: |
-          pip install -r requirements.txt pyinstaller
-
-      - name: Перевірити код
-        shell: powershell
-        run: |
-          # PyInstaller мовчки викидає модулі з помилками, тому перевіряємо заздалегідь.
-          python -m compileall -q main.py version.py ui core agent models_db
+          ./src/build.ps1
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          # main імпортує всі вікна, налаштування, видалення тощо — якщо щось зламано, впаде тут
-          python -c "import main; print('imports ok')"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-
-      - name: Зібрати програму
-        shell: powershell
-        run: |
-          pyinstaller OpenForge.spec
-
-      - name: Зібрати інсталятор
-        shell: powershell
-        run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
-          $ver = (Select-String -Path version.py -Pattern '"([^"]+)"').Matches[0].Groups[1].Value
-          & $iscc "/DAppVersion=$ver" installer.iss
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          Get-Item dist\OpenForge-setup.exe | Select-Object Name, Length
+          Get-Item src\OpenForge-setup.exe | Select-Object Name, Length
 
       - name: Зберегти файли
         uses: actions/upload-artifact@v4
         with:
           name: OpenForge
           path: |
-            dist/OpenForge-setup.exe
-            dist/OpenForge.exe
+            src/OpenForge-setup.exe
+            src/OpenForge.exe
 
       - name: Створити чернетку релізу
         if: inputs.version != ''
@@ -75,17 +47,18 @@ jobs:
         run: |
           VER="${VER#v}"
           TAG="v$VER"
-          # Номер у програмі (version.py) має збігатися з номером релізу.
-          grep -q "\"$VER\"" version.py || { echo "::error::У version.py інша версія — зміни VERSION на \"$VER\"."; exit 1; }
+          # Номер у програмі (src/Version.cs) має збігатися з номером релізу.
+          grep -q "Text = \"$VER\"" src/Version.cs || { echo "::error::У src/Version.cs інша версія — зміни Text на \"$VER\"."; exit 1; }
           # Опис релізу — розділ «## $VER» з CHANGES.md (він же піде в Telegram-канал).
           NOTES=$(awk -v v="## $VER" '{sub(/\r$/,"")} $0==v{f=1;next} /^## /{if(f)exit} f' CHANGES.md | sed '/./,$!d')
           [ -z "$NOTES" ] && NOTES="Open Forge $VER для Windows 10 і 11."
-          printf '%s\n\nЗавантаж OpenForge-setup.exe нижче й запусти його.\n' "$NOTES" > notes.md
+          printf '%s\n\nЗавантаж OpenForge-setup.exe нижче й запусти його — він сам оновить програму, налаштування збережуться.\n' "$NOTES" > notes.md
           if gh release view "$TAG" >/dev/null 2>&1; then
+            # Чернетку (ще не опубліковану) переносимо на свіжий код і оновлюємо опис; опублікований реліз не чіпаємо.
             if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
               gh release edit "$TAG" --target "$GITHUB_SHA" --notes-file notes.md
             fi
-            gh release upload "$TAG" dist/OpenForge-setup.exe --clobber
+            gh release upload "$TAG" src/OpenForge-setup.exe --clobber
           else
-            gh release create "$TAG" dist/OpenForge-setup.exe --draft --target "$GITHUB_SHA" --title "Open Forge $VER" --notes-file notes.md
+            gh release create "$TAG" src/OpenForge-setup.exe --draft --target "$GITHUB_SHA" --title "Open Forge $VER" --notes-file notes.md
           fi
