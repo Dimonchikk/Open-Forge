@@ -129,6 +129,7 @@ class ChatView(ctk.CTkFrame):
         self._labels: list[tuple[ctk.CTkLabel, str]] = []   # (label, "user"|"ai")
         self._stop = threading.Event()
         self._streaming = False
+        self._scroll_pending = False
         self._state = "loading"      # loading | no_ollama | no_models | ready
         self._build()
 
@@ -410,8 +411,20 @@ class ChatView(ctk.CTkFrame):
         return {"row": row, "label": lbl, "foot": foot, "buf": [], "thinking": 0}
 
     def _scroll_end(self):
-        self.update_idletasks()
-        self._scroll._parent_canvas.yview_moveto(1.0)
+        # Coalesce scrolling: never force a synchronous full relayout here (that was
+        # O(n) per streamed token and froze the window on long answers). Tk lays the
+        # text out on idle; we just ride to the bottom once afterwards.
+        if self._scroll_pending:
+            return
+        self._scroll_pending = True
+        self.after_idle(self._do_scroll)
+
+    def _do_scroll(self):
+        self._scroll_pending = False
+        try:
+            self._scroll._parent_canvas.yview_moveto(1.0)
+        except Exception:
+            pass
 
     # ── send / stream ─────────────────────────────────────────────────────────
 
@@ -462,13 +475,17 @@ class ChatView(ctk.CTkFrame):
     def _render_loop(self, msg: dict):
         if not self._streaming:
             return
-        text = _THINK_RE.sub("", "".join(msg["buf"])).lstrip()
-        if text:
-            msg["label"].configure(text=text, text_color=c("text"))
-            self._scroll_end()
-        elif msg["thinking"]:
-            msg["label"].configure(text=f"Міркує… ({msg['thinking']} символів думок)")
-        self.after(50, self._render_loop, msg)
+        n = len(msg["buf"])
+        if n != msg.get("shown_n"):          # only repaint when new tokens arrived
+            msg["shown_n"] = n
+            raw = "".join(msg["buf"])
+            text = (_THINK_RE.sub("", raw) if "<think>" in raw else raw).lstrip()
+            if text:
+                msg["label"].configure(text=text, text_color=c("text"))
+                self._scroll_end()
+            elif msg["thinking"]:
+                msg["label"].configure(text=f"Міркує… ({msg['thinking']} символів думок)")
+        self.after(120, self._render_loop, msg)
 
     def _finish(self, msg: dict, stats: dict, err):
         self._streaming = False
