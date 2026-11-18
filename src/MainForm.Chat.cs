@@ -155,8 +155,15 @@ namespace OpenForge
             if (stream != null) { stream.Cancel(); return; }   // кнопка під час відповіді — «Зупинити»
             string text = chatInput.Box.Text.Trim();
             if (text.Length == 0) return;
-            if (ollamaVersion == null) { chatList.Add(new ChatMessage("error", "Ollama не запущена. Запусти її й надішли ще раз.")); return; }
-            if (string.IsNullOrEmpty(model) || models.Count == 0) { chatList.Add(new ChatMessage("error", "Спершу завантаж модель у розділі «Моделі».")); return; }
+            // Стан Ollama перевіряється раз на 3 с, тож одразу після запуску він ще може бути невідомим —
+            // не блокуємо: якщо Ollama справді не працює, запит сам поверне зрозумілу помилку.
+            if (string.IsNullOrEmpty(model))
+            {
+                chatList.Add(new ChatMessage("error", ollamaVersion == null && !firstPoll
+                    ? "Ollama не запущена. Запусти її й надішли ще раз."
+                    : "Спершу завантаж модель у розділі «Моделі»."));
+                return;
+            }
 
             var history = new List<Turn>();
             foreach (var m in chatList.Items)

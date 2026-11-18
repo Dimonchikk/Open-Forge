@@ -158,7 +158,7 @@ namespace OpenForge
             int sw = Math.Max(Ui.S(120), status.Natural());
             status.Bounds = new Rectangle(theme.Left - Ui.S(12) - sw, Ui.S(30), sw, Ui.S(32));
             lblTitle.Bounds = new Rectangle(x - Ui.S(3), Ui.S(22), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(36));
-            lblSub.Bounds = new Rectangle(x - Ui.S(1), Ui.S(56), Math.Max(10, status.Left - x + Ui.S(120)), Ui.S(20));
+            lblSub.Bounds = new Rectangle(x - Ui.S(1), Ui.S(56), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(20));   // не налазить на пігулку стану
             var area = new Rectangle(side, Ui.S(HeaderH), w - side, Math.Max(0, h - Ui.S(HeaderH)));
             foreach (var p in pages) p.Bounds = area;
         }
