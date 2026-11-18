@@ -23,13 +23,24 @@ namespace OpenForge
         public static double RamGb, VramGb;
         public static string GpuName = "";
         public static int Threads = Environment.ProcessorCount;
-        static bool detected;
+        static volatile bool detected;
+        public static bool Done { get { return detected; } }
+        static readonly object sync = new object();
 
         // Визначити один раз (кілька сотень мілісекунд через WMI) — з фонового потоку.
+        // Якщо вже визначає інший потік — дочекатися його.
         public static void Detect()
         {
-            if (detected) return;
-            detected = true;
+            lock (sync)
+            {
+                if (detected) return;
+                DetectNow();
+                detected = true;
+            }
+        }
+
+        static void DetectNow()
+        {
             try
             {
                 var m = new MemoryStatusEx();

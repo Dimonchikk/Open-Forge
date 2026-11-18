@@ -79,6 +79,33 @@ namespace OpenForge
         public double TokensPerSecond { get { return EvalNs > 0 ? EvalCount / (EvalNs / 1e9) : 0; } }
     }
 
+    // Завантаження однієї моделі (ollama pull). Пише фоновий потік, читає вікно.
+    class PullJob
+    {
+        public readonly string Model;
+        public volatile bool Done;
+        public volatile string Status = "Підключаюся…";
+        public string Error;
+        public long Total, Completed;
+        volatile bool cancel;
+        HttpWebRequest req;
+        internal readonly Dictionary<string, long[]> Layers = new Dictionary<string, long[]>();
+
+        public PullJob(string model) { Model = model; }
+
+        public bool Cancelled { get { return cancel; } }
+        public double Fraction { get { return Total > 0 ? Math.Min(1.0, (double)Completed / Total) : 0; } }
+
+        public void Cancel()
+        {
+            cancel = true;
+            var r = req;
+            if (r != null) try { r.Abort(); } catch { }
+        }
+
+        internal void Attach(HttpWebRequest r) { req = r; if (cancel) try { r.Abort(); } catch { } }
+    }
+
     static class Ollama
     {
         public static string Host = "http://127.0.0.1:11434";
@@ -214,6 +241,74 @@ namespace OpenForge
                 stream.Finished = DateTime.UtcNow;
                 stream.Done = true;
             }
+        }
+
+        static HttpWebRequest PostJson(string path, string method, object body, int timeoutMs)
+        {
+            byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
+            var req = Request(path, method, timeoutMs);
+            req.ContentType = "application/json";
+            req.ContentLength = data.Length;
+            using (var rs = req.GetRequestStream()) rs.Write(data, 0, data.Length);
+            return req;
+        }
+
+        // Завантажити модель. Блокує до кінця — викликати з фонового потоку. Перерване завантаження
+        // Ollama продовжує з того ж місця, тож «Скасувати» нічого не губить.
+        public static void Pull(PullJob job)
+        {
+            try
+            {
+                var req = Request("/api/pull", "POST", 30 * 60 * 1000);
+                job.Attach(req);
+                byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "model", job.Model }, { "stream", true } }));
+                req.ContentType = "application/json";
+                req.ContentLength = data.Length;
+                using (var rs = req.GetRequestStream()) rs.Write(data, 0, data.Length);
+                using (var resp = req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                {
+                    string line;
+                    while (!job.Cancelled && (line = sr.ReadLine()) != null)
+                    {
+                        if (line.Length == 0) continue;
+                        var d = Obj(Json.DeserializeObject(line));
+                        if (d == null) continue;
+                        string err = Str(d, "error");
+                        if (err != null) { job.Error = err; break; }
+                        string status = Str(d, "status") ?? "";
+                        string digest = Str(d, "digest");
+                        long total = Num(d, "total"), done = Num(d, "completed");
+                        if (digest != null && total > 0)
+                        {
+                            lock (job.Layers) job.Layers[digest] = new[] { total, done };
+                            long t = 0, c = 0;
+                            lock (job.Layers) foreach (var v in job.Layers.Values) { t += v[0]; c += v[1]; }
+                            job.Total = t;
+                            job.Completed = c;
+                        }
+                        if (status == "success") { job.Status = "Готово"; break; }
+                        job.Status = status.StartsWith("pulling") ? "Завантаження" : status.StartsWith("verifying") ? "Перевірка" :
+                            status.StartsWith("writing") ? "Запис" : "Підготовка";
+                    }
+                }
+            }
+            catch (WebException ex) { if (!job.Cancelled) job.Error = Explain(ex); }
+            catch (Exception ex) { if (!job.Cancelled) job.Error = ex.Message; }
+            finally { job.Done = true; }
+        }
+
+        // Видалити модель з диска. null — вдалося, інакше текст помилки.
+        public static string Delete(string model)
+        {
+            try
+            {
+                var req = PostJson("/api/delete", "DELETE", new Dictionary<string, object> { { "model", model } }, 30000);
+                using (req.GetResponse()) { }
+                return null;
+            }
+            catch (WebException ex) { return Explain(ex); }
+            catch (Exception ex) { return ex.Message; }
         }
 
         // Зрозуміле пояснення помилки замість технічного тексту.

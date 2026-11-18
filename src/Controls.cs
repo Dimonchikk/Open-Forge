@@ -23,7 +23,7 @@ namespace OpenForge
 
         public bool PreFilterMessage(ref Message m)
         {
-            if (m.Msg != 0x020A || !form.ContainsFocus && Form.ActiveForm != form) return false;   // WM_MOUSEWHEEL
+            if (m.Msg != 0x020A) return false;   // WM_MOUSEWHEEL
             Control c = form;
             var p = form.PointToClient(Cursor.Position);
             if (!form.ClientRectangle.Contains(p)) return false;
@@ -73,6 +73,162 @@ namespace OpenForge
 
         protected override void OnTextChanged(EventArgs e) { base.OnTextChanged(e); Invalidate(); }
         protected override void OnEnabledChanged(EventArgs e) { base.OnEnabledChanged(e); Invalidate(); }
+    }
+
+    // Сегментований перемикач (як у macOS) з анімованим «бігунком».
+    class Segmented : UiControl
+    {
+        string[] items = new string[0];
+        public Func<int, Color> Accent;
+        public bool FitText;   // ширина сегментів за довжиною тексту (для головних вкладок)
+        int selected = -1, hover = -1;
+        float thumb = -1;
+        readonly Timer anim = new Timer();
+        public event Action<int> ItemClicked;
+
+        public Segmented()
+        {
+            Cursor = Cursors.Hand;
+            anim.Interval = 15;
+            anim.Tick += (s, e) =>
+            {
+                float d = selected - thumb;
+                if (Math.Abs(d) < 0.02f) { thumb = selected; anim.Stop(); }
+                else thumb += d * 0.3f;
+                Invalidate();
+            };
+        }
+
+        public string[] Items
+        {
+            get { return items; }
+            set { items = value ?? new string[0]; Invalidate(); }
+        }
+
+        public int Selected
+        {
+            get { return selected; }
+            set
+            {
+                if (value == selected) return;
+                selected = value;
+                if (thumb >= 0 && selected >= 0 && Visible && IsHandleCreated) anim.Start();
+                else { thumb = selected; anim.Stop(); Invalidate(); }
+            }
+        }
+
+        float Pad { get { return Ui.S(2); } }
+
+        // Межі сегментів: рівні або пропорційні до тексту.
+        float[] Edges()
+        {
+            int n = Math.Max(1, items.Length);
+            var e = new float[n + 1];
+            float total = Width - 2 * Pad;
+            e[0] = Pad;
+            if (!FitText || items.Length == 0)
+            {
+                for (int i = 1; i <= n; i++) e[i] = Pad + total * i / n;
+                return e;
+            }
+            var w = new float[n];
+            float sum = 0;
+            for (int i = 0; i < n; i++)
+            {
+                w[i] = TextRenderer.MeasureText(items[i], Ui.BodySemi, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width;
+                sum += w[i];
+            }
+            float extra = (total - sum) / n;
+            for (int i = 0; i < n; i++) e[i + 1] = e[i] + w[i] + extra;
+            e[n] = Pad + total;
+            return e;
+        }
+
+        RectangleF Seg(float i)
+        {
+            var e = Edges();
+            int n = e.Length - 1;
+            int a = Math.Max(0, Math.Min(n - 1, (int)Math.Floor(i)));
+            int b = Math.Min(n - 1, a + 1);
+            float t = Math.Max(0, Math.Min(1, i - a));
+            float x = e[a] + (e[b] - e[a]) * t;
+            float w = (e[a + 1] - e[a]) + ((e[b + 1] - e[b]) - (e[a + 1] - e[a])) * t;
+            return new RectangleF(x, Pad, w, Height - 2 * Pad);
+        }
+
+        int HitTest(Point p)
+        {
+            if (items.Length == 0) return -1;
+            var e = Edges();
+            for (int i = 0; i < items.Length; i++)
+                if (p.X >= e[i] && p.X < e[i + 1]) return i;
+            return -1;
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            var g = Prep(e);
+            float rad = Ui.S(9);
+            Ui.FillRound(g, new RectangleF(0, 0, Width - 1, Height - 1), rad, Enabled ? Ui.Fill : Ui.SegDisabled);
+            if (Enabled && hover >= 0 && hover != selected)
+                Ui.FillRound(g, Seg(hover), rad - Pad, Ui.FillHover);
+            using (var pen = new Pen(Ui.SegSep, Math.Max(1f, Ui.Scale)))
+            {
+                for (int i = 1; i < items.Length; i++)
+                {
+                    if (thumb >= 0 && i > thumb - 1 && i < thumb + 2) continue;
+                    if (hover >= 0 && (i == hover || i == hover + 1)) continue;
+                    var r = Seg(i);
+                    g.DrawLine(pen, r.X, r.Y + r.Height * 0.28f, r.X, r.Bottom - r.Height * 0.28f);
+                }
+            }
+            if (thumb >= 0 && items.Length > 0)
+            {
+                var t = Seg(thumb);
+                Ui.FillRound(g, new RectangleF(t.X, t.Y + Ui.S(1), t.Width, t.Height), rad - Pad,
+                    Color.FromArgb(Enabled ? Ui.ShadowAlpha : Ui.ShadowAlpha / 3, 0, 0, 0));
+                Ui.FillRound(g, t, rad - Pad, Ui.Thumb);
+            }
+            for (int i = 0; i < items.Length; i++)
+            {
+                var r = Rectangle.Round(Seg(i));
+                r.Inflate(-Ui.S(3), 0);
+                bool sel = i == selected;
+                Color c = Enabled ? (sel ? (Accent != null ? Accent(i) : Ui.Ink) : Ui.SegText) : Ui.Ink3;
+                // У вузькому вікні сегменти вужчі — тоді текст дрібнішим шрифтом, щоб не обрізався.
+                var f = sel ? Ui.BodySemi : Ui.Body;
+                if (TextRenderer.MeasureText(items[i], Ui.BodySemi, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width > r.Width - Ui.S(8)) f = Ui.Small;
+                Ui.Text(g, items[i], f, r, c, Ui.Center);
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            int h = HitTest(e.Location);
+            if (h != hover) { hover = h; Invalidate(); }
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            hover = -1;
+            Invalidate();
+            base.OnMouseLeave(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (!(Enabled && e.Button == MouseButtons.Left)) return;
+            int i = HitTest(e.Location);
+            if (i >= 0 && ItemClicked != null) ItemClicked(i);
+        }
+
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            base.OnEnabledChanged(e);
+            Cursor = Enabled ? Cursors.Hand : Cursors.Default;
+        }
     }
 
     // Кнопка-«пігулка»: сіра, синя (Primary) або з власним кольором; може мати значок ліворуч.
@@ -296,25 +452,36 @@ namespace OpenForge
         Color color = Color.Green;
         public StatusPill() { OnBg = true; }
 
+        public event Action Resized;
+
         public void Set(string text, Color c)
         {
             if (Text == text && color == c) return;
+            bool longer = text != Text;
             color = c;
             Text = text;
             Invalidate();
+            if (longer && Resized != null) Resized();
+        }
+
+        // Ширина під напис з полями — шапка дає пігулці саме стільки місця.
+        public int Natural()
+        {
+            if (string.IsNullOrEmpty(Text)) return 0;
+            return TextRenderer.MeasureText(Text, Ui.Small, Size.Empty, TextFormatFlags.NoPadding | TextFormatFlags.SingleLine).Width + Ui.S(42);
         }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = Prep(e);
             if (string.IsNullOrEmpty(Text)) return;
-            var size = TextRenderer.MeasureText(g, Text, Ui.Small, Size.Empty, TextFormatFlags.NoPadding);
-            int w = size.Width + Ui.S(30), h = Ui.S(26);
-            var r = new RectangleF(Width - w, (Height - h) / 2f, w, h);
+            int h = Ui.S(26);
+            int w = Math.Min(Width - 1, Natural());
+            var r = new RectangleF(Width - 1 - w, (Height - h) / 2f, w, h);
             Ui.FillRound(g, r, h / 2f, Color.FromArgb(Ui.Dark ? 46 : 30, color));
             float d = Ui.S(6);
-            using (var b = new SolidBrush(color)) g.FillEllipse(b, r.X + Ui.S(11), r.Y + (h - d) / 2f, d, d);
-            Ui.Text(g, Text, Ui.Small, new Rectangle((int)r.X + Ui.S(21), (int)r.Y, w - Ui.S(24), h), color, Ui.Left);
+            using (var b = new SolidBrush(color)) g.FillEllipse(b, r.X + Ui.S(13), r.Y + (h - d) / 2f, d, d);
+            Ui.Text(g, Text, Ui.Small, new Rectangle((int)r.X + Ui.S(25), (int)r.Y, w - Ui.S(25) - Ui.S(12), h), color, Ui.Left);
         }
     }
 

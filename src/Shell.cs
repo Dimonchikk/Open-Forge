@@ -158,8 +158,8 @@ namespace OpenForge
             var logo = new RectangleF(Ui.S(22), Ui.S(28), Ui.S(30), Ui.S(30));
             using (var b = new SolidBrush(Ui.Blue)) g.FillEllipse(b, logo);
             Icons.Draw(g, "spark", RectangleF.Inflate(logo, -Ui.S(7), -Ui.S(7)), Color.White);
-            Ui.Text(g, "Open Forge", Ui.Brand, new Rectangle(Ui.S(60), Ui.S(24), Width - Ui.S(64), Ui.S(22)), Ui.Ink, Ui.Left);
-            Ui.Text(g, "Нейромережі на твоєму ПК", Ui.Caps, new Rectangle(Ui.S(60), Ui.S(46), Width - Ui.S(64), Ui.S(16)), Ui.Ink2, Ui.Left);
+            Ui.Text(g, "Open Forge", Ui.Brand, new Rectangle(Ui.S(60), Ui.S(24), Width - Ui.S(80), Ui.S(22)), Ui.Ink, Ui.Left);
+            Ui.Text(g, "Нейромережі на твоєму ПК", Ui.Caps, new Rectangle(Ui.S(60), Ui.S(46), Width - Ui.S(80), Ui.S(16)), Ui.Ink2, Ui.Left);
 
             for (int i = 0; i < Items.Length; i++)
             {

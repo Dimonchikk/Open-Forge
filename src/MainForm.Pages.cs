@@ -1,5 +1,4 @@
-// Open Forge — розділи «Моделі», «Порівняння» й «Налаштування».
-// «Моделі» й «Порівняння» поки показують основне; каталог, завантаження й порівняння переносяться з версії 1.2.
+// Open Forge — розділи «Порівняння» (поки заглушка, переноситься з версії 1.2) і «Налаштування».
 using System;
 using System.Drawing;
 using System.Text;
@@ -10,37 +9,9 @@ namespace OpenForge
 {
     partial class MainForm
     {
-        Label modelsBody;
         InputBox sysInput;
         Label pcBody;
         bool hwStarted;
-
-        Control BuildModels()
-        {
-            return Placeholder("Встановлені моделі", "Перевіряю Ollama…", out modelsBody);
-        }
-
-        void RefreshModelsPage()
-        {
-            if (modelsBody == null) return;
-            string text;
-            if (ollamaVersion == null) text = "Ollama не запущена — список моделей з'явиться, щойно вона запрацює.";
-            else if (models.Count == 0) text = "Поки що жодної моделі. Каталог з рекомендаціями під твій ПК і завантаження в один клік переносяться з версії 1.2.";
-            else
-            {
-                var sb = new StringBuilder();
-                foreach (var m in models)
-                {
-                    sb.Append(m.Name).Append("   ·   ").Append(m.SizeGb.ToString("0.0")).Append(" ГБ");
-                    if (!string.IsNullOrEmpty(m.Params)) sb.Append("   ·   ").Append(m.Params);
-                    if (!string.IsNullOrEmpty(m.Quant)) sb.Append("   ·   ").Append(m.Quant);
-                    sb.Append('\n');
-                }
-                text = sb.ToString().TrimEnd('\n');
-            }
-            modelsBody.Text = text;
-            ((ScrollHost)pages[1]).Rearrange();
-        }
 
         Control BuildCompare()
         {

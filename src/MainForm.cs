@@ -11,7 +11,7 @@ namespace OpenForge
 {
     partial class MainForm : Form
     {
-        const int SideW = 210, HeaderH = 88;
+        const int SideW = 236, HeaderH = 88;
         static readonly string[] Titles = { "Чат", "Моделі", "Порівняння", "Налаштування" };
         static readonly string[] IconKeys = { "chat", "models", "compare", "settings" };
         static readonly string[] Subtitles =
@@ -63,6 +63,7 @@ namespace OpenForge
             lblTitle = Ui.MakeLabel(this, "", Rectangle.Empty, Ui.H1, Ui.CInk, Ui.CBg);
             lblSub = Ui.MakeLabel(this, "", Rectangle.Empty, Ui.Body, Ui.CInk2, Ui.CBg);
             lblTitle.AutoEllipsis = lblSub.AutoEllipsis = true;
+            status.Resized += () => OnResize(EventArgs.Empty);
             Controls.Add(status);
             theme.Selected = Math.Max(0, Math.Min(2, Settings.GetInt("Theme", 0)));
             theme.Changed += i => { Settings.SetInt("Theme", i); ApplyTheme(); };
@@ -111,6 +112,7 @@ namespace OpenForge
             base.OnShown(e);
             Poll();
             poll.Start();
+            DetectHardware();
             CheckUpdates();
             updateTimer.Start();
             if (current == 0) chatInput.Box.Focus();
@@ -153,7 +155,8 @@ namespace OpenForge
             sidebar.Bounds = new Rectangle(0, 0, side, h);
             int x = side + Ui.S(32), right = w - Ui.S(28);
             theme.Bounds = new Rectangle(right - Ui.S(108), Ui.S(30), Ui.S(108), Ui.S(32));
-            status.Bounds = new Rectangle(theme.Left - Ui.S(232), Ui.S(30), Ui.S(220), Ui.S(32));
+            int sw = Math.Max(Ui.S(120), status.Natural());
+            status.Bounds = new Rectangle(theme.Left - Ui.S(12) - sw, Ui.S(30), sw, Ui.S(32));
             lblTitle.Bounds = new Rectangle(x - Ui.S(3), Ui.S(22), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(36));
             lblSub.Bounds = new Rectangle(x - Ui.S(1), Ui.S(56), Math.Max(10, status.Left - x + Ui.S(120)), Ui.S(20));
             var area = new Rectangle(side, Ui.S(HeaderH), w - side, Math.Max(0, h - Ui.S(HeaderH)));
