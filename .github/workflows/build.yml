@@ -28,7 +28,7 @@ jobs:
         run: |
           ./src/build.ps1
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          Get-Item src\OpenForge-setup.exe | Select-Object Name, Length
+          Get-Item "$env:GITHUB_WORKSPACE\src\OpenForge-setup.exe" | Select-Object Name, Length
 
       - name: Зберегти файли
         uses: actions/upload-artifact@v4
