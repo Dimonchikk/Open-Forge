@@ -153,10 +153,21 @@ namespace OpenForge
             return chatPage;
         }
 
+        bool layingOut, layoutPending;
+
         void LayoutChat()
         {
             if (chatPage == null) return;
-            int w = chatPage.Width, h = chatPage.Height;
+            // Захист від рекурсії: chatInput.Bounds → WantHeight → LayoutChat. Інакше поле вводу й чип папки «стрибали».
+            if (layingOut) { layoutPending = true; return; }
+            layingOut = true;
+            try { do { layoutPending = false; LayoutChatCore(); } while (layoutPending); }
+            finally { layingOut = false; }
+        }
+
+        void LayoutChatCore()
+        {
+            int w = chatPage.Width, h = chatPage.Height, full = w;
             // Бічна панель праворуч; на вузькому вікні не показуємо (чату лишилось би замало місця).
             int pw = Math.Min(Ui.S(340), Math.Max(Ui.S(290), w * 2 / 5));
             bool panel = PanelWanted && w - pw >= Ui.S(560);
@@ -169,7 +180,10 @@ namespace OpenForge
             panelBtn.Bounds = new Rectangle(w - Ui.S(44), Ui.S(2), Ui.S(32), Ui.S(32));
             panelTimer.Enabled = panel;
             int col = Math.Min(Ui.S(780), w - Ui.S(48));
-            int x = (w - col) / 2;
+            // Колонка чату стоїть по центру всього вікна, а коли праворуч панель — зсувається рівно настільки,
+            // щоб не заходити під неї (раніше вона перестрибувала в центр лівої частини).
+            int x = Math.Max(Ui.S(24), Math.Min((full - col) / 2, w - col - Ui.S(24)));
+            if (!panel) x = (w - col) / 2;
             modelBtn.Bounds = new Rectangle(x, Ui.S(2), Math.Min(Ui.S(320), modelBtn.Natural()), Ui.S(32));
             UpdateThinkBtn();
             if (thinkBtn.Visible) thinkBtn.Bounds = new Rectangle(modelBtn.Right + Ui.S(8), Ui.S(2), thinkBtn.Natural(), Ui.S(32));
@@ -208,6 +222,7 @@ namespace OpenForge
                 listBottom = editChip.Top - Ui.S(6);
             }
             chatList.Bounds = new Rectangle(0, Ui.S(42), w, Math.Max(0, listBottom - Ui.S(42)));
+            chatList.CenterX = x + col / 2;
         }
 
         // ── картинки ────────────────────────────────────────────────────────────

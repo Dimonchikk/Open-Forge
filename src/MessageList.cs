@@ -219,7 +219,18 @@ namespace OpenForge
 
         int Gutter { get { return Ui.S(Compact ? 10 : 16); } }
         int ColW { get { return Compact ? Math.Max(Ui.S(80), Width - Ui.S(26)) : Math.Max(Ui.S(200), Math.Min(Ui.S(760), Width - 2 * Gutter - Ui.S(12))); } }
-        int ColX { get { return Compact ? Ui.S(10) : (Width - Ui.S(12) - ColW) / 2 + Ui.S(6); } }
+        int ColX
+        {
+            get
+            {
+                if (Compact) return Ui.S(10);
+                // Центр колонки задає вікно (щоб повідомлення стояли рівно над полем вводу й не «стрибали», коли відкривається панель).
+                if (CenterX > 0) return Math.Max(Ui.S(6), Math.Min(Width - Ui.S(6) - ColW, CenterX - ColW / 2));
+                return (Width - Ui.S(12) - ColW) / 2 + Ui.S(6);
+            }
+        }
+        int centerX;
+        public int CenterX { get { return centerX; } set { if (centerX != value) { centerX = value; Invalidate(); } } }
         int TopPad { get { return Ui.S(Compact ? 8 : 20); } }
         int PadX { get { return Ui.S(14); } }
         int PadY { get { return Ui.S(9); } }
