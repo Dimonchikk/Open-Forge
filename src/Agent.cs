@@ -11,6 +11,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -60,7 +61,20 @@ namespace OpenForge
             var r = req;
             if (r != null) try { r.Abort(); } catch { }
             var p = proc;
-            if (p != null) try { if (!p.HasExited) p.Kill(); } catch { }
+            if (p != null) KillTree(p);
+        }
+
+        // Зупинити команду разом з усім, що вона запустила (cmd → python → …).
+        static void KillTree(Process p)
+        {
+            try
+            {
+                if (p.HasExited) return;
+                if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                    using (var k = Process.Start(new ProcessStartInfo("taskkill", "/T /F /PID " + p.Id) { UseShellExecute = false, CreateNoWindow = true })) k.WaitForExit(5000);
+                if (!p.HasExited) p.Kill();
+            }
+            catch { }
         }
 
         public string TakeIfChanged(ref int seen)
@@ -128,7 +142,8 @@ namespace OpenForge
                 new Dictionary<string, object> { { "path", Str("Path relative to the project folder.") }, { "content", Str("Full file content.") } }, "path", "content"),
             Tool("read_file", "Read a text file from the project folder.", new Dictionary<string, object> { { "path", Str(null) } }, "path"),
             Tool("list_files", "List files in the project folder (or a subfolder).", new Dictionary<string, object> { { "subdir", Str("Optional subfolder.") } }),
-            Tool("run_command", "Run a shell command in the project folder (Windows cmd). Use for installing packages, running scripts, tests.",
+            Tool("run_command", "Run a shell command in the project folder (Windows cmd) and wait for it to finish. Use for installing packages, running scripts, tests. " +
+                 "Do NOT use it for servers or programs that keep running (python -m http.server, npm run dev, flask run, a GUI app) — use start_program for those.",
                 new Dictionary<string, object> { { "command", Str(null) } }, "command"),
             Tool("delete_file", "Delete a file from the project folder.", new Dictionary<string, object> { { "path", Str(null) } }, "path"),
             Tool("screenshot_page", "Take a screenshot of a web page or local HTML file (rendered in a headless browser) to check how it looks. " +
@@ -235,6 +250,10 @@ namespace OpenForge
             }
         }
 
+        // Схоже, що команда підняла сервер і чекає запитів (тоді вона сама ніколи не завершиться).
+        static readonly Regex ServerLike = new Regex(@"Serving HTTP|Running on|[Ll]istening|localhost:\d+|127\.0\.0\.1:\d+|0\.0\.0\.0:\d+|ready in|Local:\s+http|started server|Press CTRL\+C|Ctrl\+C to (quit|stop)",
+                                                      RegexOptions.Compiled);
+
         bool RunCommand(string command, out string result)
         {
             var psi = new ProcessStartInfo("cmd.exe", "/d /s /c \"chcp 65001 >nul & " + command + "\"");
@@ -245,26 +264,58 @@ namespace OpenForge
             psi.StandardOutputEncoding = psi.StandardErrorEncoding = Encoding.UTF8;
             string tools = Devices.ToolsDir;   // adb і fastboot доступні в командах агента, якщо встановлені
             if (tools != null) psi.EnvironmentVariables["PATH"] = tools + ";" + Environment.GetEnvironmentVariable("PATH");
+            psi.EnvironmentVariables["PYTHONUNBUFFERED"] = "1";   // щоб вивід Python (і «Serving HTTP…») приходив одразу
+            psi.EnvironmentVariables["PYTHONIOENCODING"] = "utf-8";
             var output = new StringBuilder();
-            using (var p = new Process { StartInfo = psi })
+            var outDone = new ManualResetEvent(false);
+            var errDone = new ManualResetEvent(false);
+            var p = new Process { StartInfo = psi };
+            p.OutputDataReceived += (s, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); else outDone.Set(); };
+            p.ErrorDataReceived += (s, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); else errDone.Set(); };
+            p.Start();
+            proc = p;
+            p.BeginOutputReadLine();
+            p.BeginErrorReadLine();
+            Func<string> text = () =>
             {
-                p.OutputDataReceived += (s, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };
-                p.ErrorDataReceived += (s, e) => { if (e.Data != null) lock (output) output.AppendLine(e.Data); };
-                p.Start();
-                proc = p;
-                p.BeginOutputReadLine();
-                p.BeginErrorReadLine();
-                bool finished = p.WaitForExit(120000);
-                if (finished) p.WaitForExit();   // без аргументу — дочитати весь вивід команди
-                else { try { p.Kill(); } catch { } p.WaitForExit(2000); }
-                proc = null;
-                string o;
-                lock (output) o = output.ToString().Trim();
-                if (o.Length > 6000) o = "…" + o.Substring(o.Length - 6000);
-                if (!finished) { result = (o.Length > 0 ? o + "\n" : "") + "команда працювала довше 2 хвилин і була зупинена"; return false; }
-                result = (o.Length > 0 ? o : "(без виводу)") + "\n[код виходу " + p.ExitCode + "]";
-                return p.ExitCode == 0;
+                string t;
+                lock (output) t = output.ToString().Trim();
+                return t.Length > 6000 ? "…" + t.Substring(t.Length - 6000) : t;
+            };
+            var sw = Stopwatch.StartNew();
+            bool finished = false, server = false;
+            while (sw.Elapsed.TotalSeconds < 120)
+            {
+                if (p.WaitForExit(500)) { finished = true; break; }
+                if (cancel) break;
+                // Сервер (python -m http.server, npm run dev, flask…) сам не завершиться — лишаємо його працювати у фоні.
+                if (sw.Elapsed.TotalSeconds > 4 && ServerLike.IsMatch(text())) { server = true; break; }
             }
+            proc = null;
+            if (server)
+            {
+                started.Add(p);
+                result = text() + "\n[команда працює у фоні як сервер — не чекаю її завершення. Наступного разу для серверів використовуй start_program]";
+                return true;
+            }
+            if (finished)
+            {
+                // Дочитати вивід, але не вічно: якщо команда запустила щось через start, воно тримає вивід відкритим.
+                var until = DateTime.Now.AddSeconds(3);
+                outDone.WaitOne(3000);
+                errDone.WaitOne(Math.Max(0, (int)(until - DateTime.Now).TotalMilliseconds));
+                string o = text();
+                int code = p.ExitCode;
+                p.Dispose();
+                result = (o.Length > 0 ? o : "(без виводу)") + "\n[код виходу " + code + "]";
+                return code == 0;
+            }
+            KillTree(p);
+            p.WaitForExit(2000);
+            string ot = text();
+            p.Dispose();
+            result = (ot.Length > 0 ? ot + "\n" : "") + (cancel ? "команду зупинено" : "команда працювала довше 2 хвилин і була зупинена. Якщо це сервер чи програма, яка не завершується сама, — запускай її через start_program");
+            return false;
         }
 
         // ── скріншоти ────────────────────────────────────────────────────────────
