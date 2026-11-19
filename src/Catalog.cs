@@ -139,6 +139,37 @@ namespace OpenForge
             M("phi4-mini-reasoning:3.8b", "Phi-4 Mini Reasoning", "reasoning", 3.2f, "Маленька Phi-4, натренована на математиці й логіці.", false, false, "думає"),
             M("cogito:14b", "Cogito 14B", "reasoning", 9.0f, "Більша Cogito з режимом глибокого міркування.", false, false, "думає,інструменти"),
 
+            // ── без цензури: більше для кожного розділу (huihui_ai, перевірено на ollama.com) ──
+            // Чат
+            M("huihui_ai/phi4-abliterated:14b", "Phi-4 14B Abliterated", "chat", 9.1f, "Phi-4 від Microsoft без відмов: сильна логіка й пояснення.", true, false, ""),
+            M("huihui_ai/mistral-small-abliterated:24b", "Mistral Small 24B Abliterated", "chat", 14.0f, "Велика Mistral без відмов. Для потужних ПК.", true, false, "інструменти"),
+            M("huihui_ai/granite3.2-abliterated:8b", "Granite 3.2 8B Abliterated", "chat", 4.9f, "IBM Granite без відмов: діловита, з довгим контекстом.", true, false, "інструменти"),
+            M("huihui_ai/exaone3.5-abliterated:7.8b", "EXAONE 3.5 7.8B Abliterated", "chat", 4.8f, "LG EXAONE без відмов: швидка й розумна для свого розміру.", true, false, ""),
+            M("huihui_ai/deephermes3-abliterated:8b", "DeepHermes 3 8B Abliterated", "chat", 4.9f, "Hermes з режимом міркування, без відмов.", true, false, "думає"),
+            // Код
+            M("huihui_ai/devstral-abliterated:24b", "Devstral 24B Abliterated", "code", 14.0f, "Агентний кодер від Mistral без відмов. Для потужних ПК.", true, false, "інструменти"),
+            M("huihui_ai/qwen2.5-coder-abliterate:3b", "Qwen 2.5 Coder 3B Abliterated", "code", 1.9f, "Маленький кодер без відмов — для слабких ПК.", true, false, ""),
+            M("huihui_ai/qwen2.5-coder-abliterate:1.5b", "Qwen 2.5 Coder 1.5B Abliterated", "code", 1.1f, "Найлегший кодер без відмов.", true, false, ""),
+            // Зображення
+            M("huihui_ai/qwen3-vl-abliterated:2b", "Qwen 3 VL 2B Abliterated", "small", 1.9f, "Крихітна модель для картинок без цензури.", true, false, "зір"),
+            M("huihui_ai/qwen2.5-vl-abliterated:3b", "Qwen 2.5 VL 3B Abliterated", "small", 3.2f, "Легка Qwen 2.5 VL без відмов: описує фото й читає текст.", true, false, "зір"),
+            M("huihui_ai/granite3.2-vision-abliterated:2b", "Granite Vision 2B Abliterated", "small", 2.4f, "IBM Granite Vision без відмов: документи, таблиці, графіки.", true, false, "зір"),
+            // Міркування
+            M("huihui_ai/deepseek-r1-abliterated:7b", "DeepSeek R1 7B Abliterated", "reasoning", 4.7f, "DeepSeek R1 (Qwen) без відмов: міркує крок за кроком.", true, false, "думає"),
+            M("huihui_ai/magistral-abliterated:24b", "Magistral 24B Abliterated", "reasoning", 14.0f, "Міркувальна Mistral без відмов. Для потужних ПК.", true, false, "думає"),
+            M("huihui_ai/exaone-deep-abliterated:7.8b", "EXAONE Deep 7.8B Abliterated", "reasoning", 4.8f, "LG EXAONE Deep без відмов: математика й логіка.", true, false, "думає"),
+            M("huihui_ai/openthinker-abliterated:7b", "OpenThinker 7B Abliterated", "reasoning", 4.7f, "Відкрита модель-мислитель без відмов.", true, false, "думає"),
+            M("huihui_ai/phi4-reasoning-abliterated:3.8b", "Phi-4 Mini Reasoning Abliterated", "reasoning", 2.5f, "Маленька Phi-4, що міркує, без відмов.", true, false, "думає"),
+            // Переклад
+            M("huihui_ai/hunyuan-mt-abliterated:7b", "Hunyuan MT 7B Abliterated", "translation", 4.6f, "Перекладач від Tencent без відмов: перекладає будь-який текст.", true, false, ""),
+            M("huihui_ai/hy-mt1.5-abliterated:1.8b", "Hunyuan MT 1.5 1.8B Abliterated", "translation", 1.1f, "Крихітний перекладач без відмов — для слабких ПК.", true, false, ""),
+            // Швидкі
+            M("huihui_ai/qwen3-abliterated:0.6b", "Qwen 3 0.6B Abliterated", "small", 0.4f, "Найменша модель без цензури — летить на будь-якому ПК.", true, false, "думає"),
+            M("huihui_ai/llama3.2-abliterate:1b", "Llama 3.2 1B Abliterated", "small", 1.0f, "Крихітна Llama без відмов.", true, false, ""),
+            M("huihui_ai/phi4-mini-abliterated:3.8b", "Phi-4 Mini 3.8B Abliterated", "small", 2.5f, "Phi-4 Mini без відмов: розумна для свого розміру.", true, false, ""),
+            M("huihui_ai/deepseek-r1-abliterated:1.5b", "DeepSeek R1 1.5B Abliterated", "small", 1.1f, "Крихітна модель, що міркує, без відмов.", true, false, "думає"),
+            M("huihui_ai/granite3.2-abliterated:2b", "Granite 3.2 2B Abliterated", "small", 1.5f, "Маленька Granite без відмов.", true, false, ""),
+            M("huihui_ai/exaone3.5-abliterated:2.4b", "EXAONE 3.5 2.4B Abliterated", "small", 1.6f, "Маленька EXAONE без відмов.", true, false, ""),
         };
 
         public static CatalogModel Find(string id)
