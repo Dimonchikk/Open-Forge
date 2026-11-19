@@ -161,6 +161,10 @@ namespace OpenForge
                         g.DrawLines(pen, new[] { P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.2f, 0.06f), P(x, y, s, 0.2f, 0.94f), P(x, y, s, 0.8f, 0.94f),
                             P(x, y, s, 0.8f, 0.26f), P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.6f, 0.26f), P(x, y, s, 0.8f, 0.26f) });
                         break;
+                    case "panel":     // вікно з бічною колонкою праворуч
+                        g.DrawRectangle(pen, x + s * 0.08f, y + s * 0.16f, s * 0.84f, s * 0.68f);
+                        g.DrawLine(pen, P(x, y, s, 0.62f, 0.16f), P(x, y, s, 0.62f, 0.84f));
+                        break;
                     case "sort":      // смужки, що коротшають
                         g.DrawLine(pen, P(x, y, s, 0.12f, 0.24f), P(x, y, s, 0.88f, 0.24f));
                         g.DrawLine(pen, P(x, y, s, 0.12f, 0.5f), P(x, y, s, 0.64f, 0.5f));

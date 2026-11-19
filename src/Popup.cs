@@ -39,11 +39,32 @@ namespace OpenForge
         [DllImport("dwmapi.dll")]
         static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
-        // Показати під елементом anchor (ширина — не менша за anchor і за найдовший пункт).
+        // Показати під елементом anchor (ширина — не менша за anchor і за найдовший пункт; якщо знизу не влазить — над ним).
         public static void Show(Control anchor, List<PopupItem> items)
         {
+            Core(anchor, items, anchor.Width, size =>
+            {
+                var screen = Screen.FromControl(anchor).WorkingArea;
+                var p = anchor.PointToScreen(new Point(0, anchor.Height + Ui.S(6)));
+                if (p.Y + size.Height > screen.Bottom) p = anchor.PointToScreen(new Point(0, -size.Height - Ui.S(6)));
+                return p;
+            });
+        }
+
+        // Показати в точці екрана (наприклад під мишею — для правого кліку).
+        public static void ShowAt(Control owner, Point screen, List<PopupItem> items)
+        {
+            Core(owner, items, Ui.S(180), size =>
+            {
+                var area = Screen.FromControl(owner).WorkingArea;
+                return new Point(screen.X, screen.Y + size.Height > area.Bottom ? screen.Y - size.Height : screen.Y);
+            });
+        }
+
+        static void Core(Control owner, List<PopupItem> items, int minW, Func<Size, Point> place)
+        {
             var menu = new PopupMenu(items);
-            int w = anchor.Width;
+            int w = minW;
             foreach (var it in items)
             {
                 int tw = TextRenderer.MeasureText(it.Text, Ui.BodySemi).Width + Ui.S(64);
@@ -52,7 +73,8 @@ namespace OpenForge
                 if (it.Rich) tw = Math.Max(tw, TextRenderer.MeasureText(it.Detail ?? "", Ui.Small).Width + Ui.S(it.Power > 0 ? 230 : 70));
                 w = Math.Max(w, tw);
             }
-            int maxH = Math.Max(Ui.S(200), Screen.FromControl(anchor).WorkingArea.Height - Ui.S(80));
+            var area = Screen.FromControl(owner).WorkingArea;
+            int maxH = Math.Max(Ui.S(200), area.Height - Ui.S(80));
             menu.Size = new Size(Math.Min(w, Ui.S(720)), Math.Min(maxH, items.Count * menu.RowH + 2 * Pad));
 
             var dd = new ToolStripDropDown { Padding = Padding.Empty, Margin = Padding.Empty, DropShadowEnabled = true, BackColor = Ui.Card, AutoSize = false };
@@ -60,18 +82,15 @@ namespace OpenForge
             dd.Items.Add(host);
             dd.Size = menu.Size;
             menu.dd = dd;
-            dd.Closed += (s, e) => { var d = dd; anchor.BeginInvoke((Action)(() => d.Dispose())); };
+            dd.Closed += (s, e) => { var d = dd; try { owner.BeginInvoke((Action)(() => d.Dispose())); } catch { } };
             dd.HandleCreated += (s, e) =>
             {
                 // Windows 11: справжні заокруглені кути з тінню; на Windows 10 просто нічого не станеться.
                 try { int round = 2; DwmSetWindowAttribute(dd.Handle, 33, ref round, 4); } catch { }
             };
-            // Якщо знизу не влазить — над елементом.
-            var screen = Screen.FromControl(anchor).WorkingArea;
-            var below = anchor.PointToScreen(new Point(0, anchor.Height + Ui.S(6)));
-            if (below.Y + dd.Height > screen.Bottom) below = anchor.PointToScreen(new Point(0, -dd.Height - Ui.S(6)));
-            if (below.X + dd.Width > screen.Right) below.X = screen.Right - dd.Width;
-            dd.Show(below);
+            var p = place(dd.Size);
+            if (p.X + dd.Width > area.Right) p.X = area.Right - dd.Width;
+            dd.Show(p);
             menu.Focus();
         }
 

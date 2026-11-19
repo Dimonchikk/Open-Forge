@@ -30,6 +30,9 @@ namespace OpenForge
         // Агент: якщо обрано папку, повідомлення йдуть агенту, який працює з файлами в ній.
         string agentFolder;
         AgentPermission agentPerm = AgentPermission.Auto;
+        SidePanel sidePanel;
+        RoundBtn panelBtn;
+        readonly System.Windows.Forms.Timer panelTimer = new System.Windows.Forms.Timer { Interval = 700 };
         AgentRun agent;
         int shotsSeen, stepsSeen;
 
@@ -72,6 +75,17 @@ namespace OpenForge
             modelBtn = new PillBtn { Icon = "models", OnBg = true, Text = "Модель" };
             modelBtn.Click += (s, e) => ShowModelMenu();
             chatPage.Controls.Add(modelBtn);
+
+            // Бічна панель «Прогрес / Вивід / Використано» і кнопка, що її відкриває.
+            sidePanel = new SidePanel();
+            sidePanel.Close += () => SetPanel(false);
+            sidePanel.PreviewSite += path => Preview.OpenFile(this, path);
+            chatPage.Controls.Add(sidePanel);
+            panelBtn = new RoundBtn { Icon = "panel", Bg = () => Ui.Bg };
+            panelBtn.Tip = "Прогрес, файли й що використано в розмові";
+            panelBtn.Click += (s, e) => SetPanel(!PanelWanted);
+            chatPage.Controls.Add(panelBtn);
+            panelTimer.Tick += (s, e) => UpdatePanel();
 
 
             chatInput = new InputBox { Multiline = true, MaxLines = 8 };
@@ -137,6 +151,17 @@ namespace OpenForge
         {
             if (chatPage == null) return;
             int w = chatPage.Width, h = chatPage.Height;
+            // Бічна панель праворуч; на вузькому вікні не показуємо (чату лишилось би замало місця).
+            int pw = Math.Min(Ui.S(330), w * 2 / 5);
+            bool panel = PanelWanted && w - pw >= Ui.S(560);
+            sidePanel.Visible = panel;
+            if (panel)
+            {
+                sidePanel.Bounds = new Rectangle(w - pw + Ui.S(4), Ui.S(2), pw - Ui.S(16), h - Ui.S(22));
+                w -= pw;
+            }
+            panelBtn.Bounds = new Rectangle(w - Ui.S(44), Ui.S(2), Ui.S(32), Ui.S(32));
+            panelTimer.Enabled = panel;
             int col = Math.Min(Ui.S(780), w - Ui.S(48));
             int x = (w - col) / 2;
             modelBtn.Bounds = new Rectangle(x, Ui.S(2), Math.Min(Ui.S(320), modelBtn.Natural()), Ui.S(32));
@@ -388,6 +413,98 @@ namespace OpenForge
 
         bool Busy { get { return stream != null || agent != null; } }
 
+        bool PanelWanted { get { return Settings.GetInt("SidePanel", 0) == 1; } }
+
+        void SetPanel(bool on)
+        {
+            Settings.SetInt("SidePanel", on ? 1 : 0);
+            LayoutChat();
+            UpdatePanel();
+        }
+
+        static readonly string[] AccessNames = { "питати завжди", "авто", "повний доступ" };
+
+        // Зібрати, що показати в бічній панелі, з поточної розмови.
+        void UpdatePanel()
+        {
+            if (sidePanel == null || !sidePanel.Visible) return;
+            var d = new PanelData();
+            var items = chatList.Items;
+            ChatMessage lastAgent = null;
+            foreach (var m in items) if (m.Role == "assistant" && m.Folder != null) lastAgent = m;
+            if (lastAgent != null)
+            {
+                d.HasAgent = true;
+                d.Live = lastAgent.Streaming;
+                d.Since = lastAgent.StartedAt;
+                d.Status = lastAgent.Streaming ? null : "Готово" + (string.IsNullOrEmpty(lastAgent.Stats) ? "" : " · " + lastAgent.Stats.Split('·').Last().Trim());
+                foreach (string line in lastAgent.Display.Split('\n'))
+                {
+                    string t = line.TrimStart();
+                    if (!t.StartsWith("▸ ")) continue;
+                    t = t.Substring(2);
+                    int state = t.Contains("  ✗") ? 1 : t.Contains("  ✓") ? 0 : lastAgent.Streaming ? 2 : 0;
+                    int mark = t.IndexOf("  ");
+                    d.Steps.Add(new KeyValuePair<string, int>(mark > 0 ? t.Substring(0, mark) : t, state));
+                }
+            }
+            var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                var m = items[i];
+                if (m.Role != "assistant" || m.Folder == null) continue;
+                if (d.Folder == null) d.Folder = m.Folder;
+                if (d.SitePath == null)
+                {
+                    string site = System.IO.Path.Combine(m.Folder, "index.html");
+                    if (System.IO.File.Exists(site)) { d.SitePath = site; if (m.Images != null && m.Images.Count > 0) d.SiteShot = m.Images[m.Images.Count - 1]; }
+                }
+                if (m.StepDetails != null)
+                    for (int k = m.StepDetails.Count - 1; k >= 0; k--)
+                    {
+                        var sd = m.StepDetails[k];
+                        if (sd.Kind != "create_file" || !sd.Ok || string.IsNullOrEmpty(sd.Path)) continue;
+                        string full;
+                        try { full = System.IO.Path.GetFullPath(System.IO.Path.Combine(m.Folder, sd.Path)); } catch { continue; }
+                        if (seenFiles.Add(full)) d.Files.Add(full);
+                    }
+                if (m.Images != null)
+                    for (int k = m.Images.Count - 1; k >= 0 && d.Shots.Count < 9; k--) d.Shots.Add(m.Images[k]);
+            }
+            if (agentFolder != null) { d.Folder = agentFolder; d.Access = AccessNames[Math.Max(0, Math.Min(2, (int)agentPerm))]; }
+            else if (d.Folder != null) d.Access = "агент";
+
+            var models = new List<string>();
+            foreach (var m in items) if (m.Role == "assistant" && !string.IsNullOrEmpty(m.Model) && !models.Contains(m.Model)) models.Add(m.Model);
+            if (!string.IsNullOrEmpty(model) && !models.Contains(model)) models.Add(model);
+            foreach (string name in models)
+            {
+                var c = Catalog.Find(name);
+                if (c != null) d.Models.Add(c); else d.OtherModels.Add(name);
+            }
+
+            // Скільки «пам'яті розмови» (контексту) зайнято — грубо: ~3 символи на токен, картинка ~800 токенів.
+            long chars = Settings.Get("SystemPrompt", "").Length;
+            int pics = 0;
+            bool filesCounted = false;
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                var m = items[i];
+                if (m.Role != "user" && m.Role != "assistant") continue;
+                chars += m.Role == "assistant" ? m.Display.Length : m.Raw.Length;
+                if (m.Files != null)
+                {
+                    foreach (var f in m.Files) d.Attached.Add(f.Name);
+                    if (!filesCounted) { chars += Math.Min(FileText.Budget, m.Files.Sum(f => f.Text.Length)); filesCounted = true; }
+                }
+                if (m.IsUser && m.Images != null) { d.Photos += m.Images.Count; pics += m.Images.Count; }
+            }
+            d.TokUsed = (int)(chars / 3) + Math.Min(4, pics) * 800;
+            d.TokMax = Ollama.NumCtx;
+            if (d.Empty && items.Count == 0) d.TokUsed = 0;
+            sidePanel.Data = d;
+        }
+
         void NewChat()
         {
             if (stream != null) stream.Cancel();
@@ -399,6 +516,7 @@ namespace OpenForge
             chatId = chatTitle = null;
             historyList.Selected = null;
             historyList.Invalidate();
+            UpdatePanel();
             if (current == 0) sidebar.Selected = 0;
             chatInput.Box.Focus();
         }
@@ -438,6 +556,7 @@ namespace OpenForge
             historyList.Invalidate();
             sidebar.Selected = -1;
             UpdateChatEmpty();
+            UpdatePanel();
             chatInput.Box.Focus();
         }
 
