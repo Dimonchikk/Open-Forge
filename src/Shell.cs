@@ -1,5 +1,6 @@
 // Open Forge — значки (малюються лініями, як у «Тихому ПК») і бокове меню.
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
@@ -161,6 +162,14 @@ namespace OpenForge
                         g.DrawLines(pen, new[] { P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.2f, 0.06f), P(x, y, s, 0.2f, 0.94f), P(x, y, s, 0.8f, 0.94f),
                             P(x, y, s, 0.8f, 0.26f), P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.6f, 0.26f), P(x, y, s, 0.8f, 0.26f) });
                         break;
+                    case "phone":     // смартфон
+                        using (var p = Ui.Round(new RectangleF(x + s * 0.26f, y + s * 0.06f, s * 0.48f, s * 0.88f), s * 0.1f)) g.DrawPath(pen, p);
+                        g.DrawLine(pen, P(x, y, s, 0.44f, 0.8f), P(x, y, s, 0.56f, 0.8f));
+                        break;
+                    case "laptop":    // ноутбук
+                        g.DrawRectangle(pen, x + s * 0.18f, y + s * 0.2f, s * 0.64f, s * 0.44f);
+                        g.DrawLine(pen, P(x, y, s, 0.06f, 0.8f), P(x, y, s, 0.94f, 0.8f));
+                        break;
                     case "panel":     // вікно з бічною колонкою праворуч
                         g.DrawRectangle(pen, x + s * 0.08f, y + s * 0.16f, s * 0.84f, s * 0.68f);
                         g.DrawLine(pen, P(x, y, s, 0.62f, 0.16f), P(x, y, s, 0.62f, 0.84f));
@@ -224,7 +233,60 @@ namespace OpenForge
         const int MeterH = 27;
         bool ShowMeters { get { return Height >= Ui.S(560); } }
         int MetersTop { get { return ItemRect(1).Y - Ui.S(14) - Ui.S(4 * MeterH); } }
-        int ListBottom { get { return (ShowMeters ? MetersTop - Ui.S(14) : ItemRect(1).Y - Ui.S(8)); } }
+        // Пристрої, підключені кабелем, — над показниками ПК.
+        List<DeviceInfo> devices = new List<DeviceInfo>();
+        string devStatus;                       // наприклад «Завантажую інструменти Android… 40 %»
+        int devHover = -2;                      // -1 — рядок «нічого не підключено», 0.. — пристрій
+        public event Action<DeviceInfo, Point> DeviceClicked;
+        public List<DeviceInfo> Devices { set { devices = value ?? new List<DeviceInfo>(); OnResize(EventArgs.Empty); } }
+        public string DeviceStatus { set { devStatus = value; Invalidate(); } }
+        bool ShowDevices { get { return Height >= Ui.S(600); } }
+        int DevRows { get { return Math.Max(1, Math.Min(3, devices.Count)); } }
+        int DevBottom { get { return ShowMeters ? MetersTop - Ui.S(18) : ItemRect(1).Y - Ui.S(12); } }
+        int DevTop { get { return DevBottom - Ui.S(22) - DevRows * Ui.S(40); } }
+        Rectangle DevRow(int i) { return new Rectangle(Ui.S(12), DevTop + Ui.S(22) + i * Ui.S(40), Width - Ui.S(24), Ui.S(38)); }
+        int ListBottom { get { return ShowDevices ? DevTop - Ui.S(10) : (ShowMeters ? MetersTop - Ui.S(14) : ItemRect(1).Y - Ui.S(8)); } }
+
+        static Color DevColor(DeviceState s)
+        {
+            return s == DeviceState.Ok ? Ui.Green : s == DeviceState.Attention ? Ui.Orange : s == DeviceState.Service ? Ui.Purple : Ui.Red;
+        }
+
+        void PaintDevices(Graphics g)
+        {
+            using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale))) g.DrawLine(pen, Ui.S(16), DevTop - Ui.S(4), Width - Ui.S(16), DevTop - Ui.S(4));
+            Ui.Text(g, "ПРИСТРОЇ", Ui.Caps, new Rectangle(Ui.S(24), DevTop + Ui.S(2), Width - Ui.S(40), Ui.S(16)), Ui.Ink3, Ui.Left);
+            if (devices.Count == 0)
+            {
+                var r = DevRow(0);
+                if (devHover == -1) Ui.FillRound(g, r, Ui.S(9), Ui.Mix(Ui.Side, Ui.Ink, 0.06f));
+                float s = Ui.S(16);
+                Icons.Draw(g, "phone", new RectangleF(r.X + Ui.S(12), r.Y + (r.Height - s) / 2f, s, s), Ui.Ink3);
+                Ui.Text(g, devStatus ?? "Підключи телефон кабелем", Ui.Small, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), Ui.Ink3, Ui.Left);
+                return;
+            }
+            for (int i = 0; i < DevRows; i++)
+            {
+                var d = devices[i];
+                var r = DevRow(i);
+                if (devHover == i) Ui.FillRound(g, r, Ui.S(9), Ui.Mix(Ui.Side, Ui.Ink, 0.06f));
+                float s = Ui.S(17);
+                Icons.Draw(g, d.Kind == "apple" && d.Mode.StartsWith("DFU") ? "laptop" : "phone", new RectangleF(r.X + Ui.S(11), r.Y + (r.Height - s) / 2f, s, s), Ui.Ink2);
+                float dd = Ui.S(7);
+                using (var b = new SolidBrush(DevColor(d.State))) g.FillEllipse(b, r.X + Ui.S(22), r.Y + r.Height / 2f + Ui.S(2), dd, dd);
+                Ui.Text(g, d.Name, Ui.Body, new Rectangle(r.X + Ui.S(40), r.Y + Ui.S(2), r.Width - Ui.S(44), Ui.S(18)), Ui.Ink, Ui.Left);
+                string mode = i == DevRows - 1 && devices.Count > DevRows ? d.Mode + " · ще " + (devices.Count - DevRows) : d.Mode;
+                Ui.Text(g, devStatus != null && i == 0 ? devStatus : mode, Ui.Caps, new Rectangle(r.X + Ui.S(40), r.Y + Ui.S(20), r.Width - Ui.S(44), Ui.S(16)), DevColor(d.State), Ui.Left);
+            }
+        }
+
+        int DevHit(Point p)
+        {
+            if (!ShowDevices) return -2;
+            if (devices.Count == 0) return DevRow(0).Contains(p) ? -1 : -2;
+            for (int i = 0; i < DevRows; i++) if (DevRow(i).Contains(p)) return i;
+            return -2;
+        }
 
         protected override void OnResize(EventArgs e)
         {
@@ -287,6 +349,7 @@ namespace OpenForge
                 Icons.Draw(g, Keys[i], new RectangleF(r.X + Ui.S(12), r.Y + (r.Height - s) / 2f, s, s), sel ? Ui.Blue : Ui.Ink2);
                 Ui.Text(g, Labels[i], sel ? Ui.BodySemi : Ui.Body, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), sel ? Ui.Blue : Ui.Ink, Ui.Left);
             }
+            if (ShowDevices) PaintDevices(g);
             if (ShowMeters)
             {
                 PaintMeters(g);
@@ -318,15 +381,18 @@ namespace OpenForge
             base.OnMouseMove(e);
             int h = Hit(e.Location);
             bool hb = ShowButton && ButtonRect.Contains(e.Location);
-            if (h != hover || hb != hoverButton) { hover = h; hoverButton = hb; Invalidate(); }
-            Cursor = h >= 0 || hb ? Cursors.Hand : Cursors.Default;
+            int dh = DevHit(e.Location);
+            if (h != hover || hb != hoverButton || dh != devHover) { hover = h; hoverButton = hb; devHover = dh; Invalidate(); }
+            Cursor = h >= 0 || hb || dh > -2 ? Cursors.Hand : Cursors.Default;
         }
 
-        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hover = -1; hoverButton = false; Invalidate(); }
+        protected override void OnMouseLeave(EventArgs e) { base.OnMouseLeave(e); hover = -1; devHover = -2; hoverButton = false; Invalidate(); }
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
+            int dh = DevHit(e.Location);
+            if (dh > -2) { if (DeviceClicked != null) DeviceClicked(dh >= 0 ? devices[dh] : null, PointToScreen(e.Location)); return; }
             if (e.Button != MouseButtons.Left) return;
             if (ShowButton && ButtonRect.Contains(e.Location)) { if (UpdateClicked != null) UpdateClicked(); return; }
             int h = Hit(e.Location);

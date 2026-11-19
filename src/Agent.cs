@@ -243,6 +243,8 @@ namespace OpenForge
             psi.CreateNoWindow = true;
             psi.RedirectStandardOutput = psi.RedirectStandardError = true;
             psi.StandardOutputEncoding = psi.StandardErrorEncoding = Encoding.UTF8;
+            string tools = Devices.ToolsDir;   // adb і fastboot доступні в командах агента, якщо встановлені
+            if (tools != null) psi.EnvironmentVariables["PATH"] = tools + ";" + Environment.GetEnvironmentVariable("PATH");
             var output = new StringBuilder();
             using (var p = new Process { StartInfo = psi })
             {
@@ -253,8 +255,8 @@ namespace OpenForge
                 p.BeginOutputReadLine();
                 p.BeginErrorReadLine();
                 bool finished = p.WaitForExit(120000);
-                if (!finished) try { p.Kill(); } catch { }
-                p.WaitForExit(2000);
+                if (finished) p.WaitForExit();   // без аргументу — дочитати весь вивід команди
+                else { try { p.Kill(); } catch { } p.WaitForExit(2000); }
                 proc = null;
                 string o;
                 lock (output) o = output.ToString().Trim();

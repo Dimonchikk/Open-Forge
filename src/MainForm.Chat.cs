@@ -67,6 +67,7 @@ namespace OpenForge
             historySearch.Box.Hint = "Пошук у чатах";
             historySearch.Box.TextChanged += (s, e) => RefreshHistory();
             sidebar.Search = historySearch;
+            StartDevices();
             speakTimer.Tick += (s, e) =>
             {
                 chatList.Invalidate();
