@@ -39,7 +39,7 @@ namespace OpenForge
         }
 
         static readonly string[] NewGen = { "qwen3.5", "qwen3.6", "gemma4", "gemma-4", "gpt-oss", "qwen3-vl", "qwen3-coder", "devstral-small-2", "magistral",
-                                            "mistral-small3.2", "phi4-reasoning", "qwq" };
+                                            "mistral-small3.2", "phi4-reasoning", "qwq", "qwen3.8", "mimo-v2.6", "ornith", "nemotron-3.5", "glm-4.7" };
         static readonly string[] OldGen = { "llama2", "wizard-vicuna", "dolphin-mistral", "llava", "dolphin-phi", "mistral:7b", "dolphin-llama3", "deepseek-coder-v2", "moondream" };
 
         // Сила від 1 до 10: наскільки модель розумна. Головне — кількість параметрів; нові покоління трохи сильніші
@@ -54,6 +54,7 @@ namespace OpenForge
                 if (NewGen.Any(x => id.Contains(x))) s++;
                 if (OldGen.Any(x => id.Contains(x))) s--;
                 if (Moe) s--;
+                if (id.Contains("-q3_") || id.Contains("-q2_")) s--;   // сильніше стиснута — трохи слабша
                 return Math.Max(1, Math.Min(10, s));
             }
         }
@@ -207,6 +208,29 @@ namespace OpenForge
             M("huihui_ai/deepseek-r1-abliterated:1.5b", "DeepSeek R1 1.5B Abliterated", "small", 1.1f, "Крихітна модель, що міркує, без відмов.", true, false, "думає"),
             M("huihui_ai/granite3.2-abliterated:2b", "Granite 3.2 2B Abliterated", "small", 1.5f, "Маленька Granite без відмов.", true, false, ""),
             M("huihui_ai/exaone3.5-abliterated:2.4b", "EXAONE 3.5 2.4B Abliterated", "small", 1.6f, "Маленька EXAONE без відмов.", true, false, ""),
+            // ── додано у 2.8: Qwen 3.8, нові й найпопулярніші моделі (перевірено на ollama.com, 19 листопада 2026) ──
+            // Qwen 3.8
+            M("qwen3.8:27b", "Qwen 3.8 27B", "chat", 18.0f, "Найновіша Qwen: код, агенти, дослідження, картинки й відео. Думає перед відповіддю.", false, false, "думає,зір,інструменти,код"),
+            M("huihui_ai/Qwen3.8-abliterated:27b", "Qwen 3.8 27B Abliterated", "chat", 18.0f, "Найновіша Qwen без відмов: код, агенти, картинки. Одна з найсильніших моделей без цензури.", true, false, "думає,зір,інструменти,код"),
+            M("huihui_ai/Qwen3.8-abliterated:27b-q3_K", "Qwen 3.8 27B Abliterated (легша)", "chat", 14.0f, "Та сама Qwen 3.8 без відмов, сильніше стиснута: менше пам'яті, трохи гірша якість.", true, false, "думає,зір,інструменти,код"),
+            M("eriktonon/qwen3.8-uncensored:9b", "Qwen 3.8 9B Uncensored", "chat", 6.4f, "Мала Qwen 3.8 без цензури (дистиляція від спільноти). Бачить картинки, швидка на 8 ГБ.", true, false, "зір"),
+            // Нові
+            M("mimo-v2.6:9b", "Xiaomi MiMo V2.6 9B", "code", 6.6f, "Модель Xiaomi для коду й агентів: думає, бачить картинки, пам'ять на 256K.", false, false, "думає,зір,інструменти"),
+            M("bonsai-2:27b", "Bonsai 2 27B", "chat", 8.3f, "Велика модель у «трійковому» стисненні: якість майже як у повної, а розмір як у 12B. Бачить картинки.", false, false, "думає,зір,інструменти"),
+            M("bonsai-2:9b", "Bonsai 2 9B", "chat", 3.2f, "Легка Bonsai 2: бачить картинки й думає, а важить як 4B.", false, false, "думає,зір,інструменти"),
+            M("flint:40b", "Flint 40B", "code", 23.0f, "MoE-модель від Recursive для агентів, що пишуть код. Активна лише ~2B параметрів.", false, true, "думає,інструменти"),
+            M("lfm3:1.7b", "LFM3 1.7B", "small", 1.1f, "Крихітна модель Liquid AI для локальних агентів. Летить на будь-якому ПК.", false, false, "думає,інструменти"),
+            // Найпопулярніші зараз
+            M("ornith:9b", "Ornith 9B", "code", 5.6f, "Популярна модель, що вчиться сама на собі; створена для агентів і коду.", false, false, "думає,інструменти"),
+            M("ornith:35b", "Ornith 35B", "code", 21.0f, "Старша Ornith для агентного програмування. MoE — працює швидше за свій розмір.", false, true, "думає,інструменти"),
+            M("ornith-1.5:9b", "Ornith 1.5 9B", "code", 6.6f, "Нова Ornith: агенти й код, а ще бачить картинки.", false, false, "думає,зір,інструменти"),
+            M("ornith-1.5:35b", "Ornith 1.5 35B", "code", 23.0f, "Старша Ornith 1.5 з картинками для складних агентних задач. MoE.", false, true, "думає,зір,інструменти"),
+            M("nemotron-3.5-lightning:30b", "Nemotron 3.5 Lightning 30B", "chat", 25.0f, "NVIDIA, MoE 30B (активні 3B): для агентів, що працюють постійно. Пам'ять на 1M токенів.", false, true, "думає,інструменти,код"),
+            // Потужні без цензури
+            M("huihui_ai/gemma-4-abliterated:31b", "Gemma 4 31B Abliterated", "chat", 20.0f, "Найбільша щільна Gemma 4 без відмов: міркування, код, картинки.", true, false, "думає,зір,інструменти,код"),
+            M("huihui_ai/gemma-4-abliterated:26b", "Gemma 4 26B Abliterated", "chat", 18.0f, "Gemma 4 MoE без відмов: активні ~4B, тож жвава для свого розміру. Бачить картинки.", true, true, "думає,зір,інструменти"),
+            M("huihui_ai/Qwen3.6-abliterated:27b", "Qwen 3.6 27B Abliterated", "chat", 17.0f, "Щільна Qwen 3.6 без відмов: код, агенти, картинки.", true, false, "думає,зір,інструменти,код"),
+            M("huihui_ai/glm-4.7-flash-abliterated:latest", "GLM 4.7 Flash Abliterated", "code", 19.0f, "GLM 4.7 Flash без відмов — за словами автора, найсильніша у класі 30B. Код, агенти, міркування.", true, true, "думає,інструменти"),
         };
 
         public static CatalogModel Find(string id)
