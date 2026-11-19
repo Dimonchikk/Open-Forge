@@ -162,6 +162,20 @@ namespace OpenForge
                         g.DrawLines(pen, new[] { P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.2f, 0.06f), P(x, y, s, 0.2f, 0.94f), P(x, y, s, 0.8f, 0.94f),
                             P(x, y, s, 0.8f, 0.26f), P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.6f, 0.26f), P(x, y, s, 0.8f, 0.26f) });
                         break;
+                    case "power":     // кнопка живлення
+                        g.DrawArc(pen, x + s * 0.16f, y + s * 0.18f, s * 0.68f, s * 0.68f, -50, 280);
+                        g.DrawLine(pen, P(x, y, s, 0.5f, 0.08f), P(x, y, s, 0.5f, 0.48f));
+                        break;
+                    case "chip":      // мікросхема (плата)
+                        g.DrawRectangle(pen, x + s * 0.24f, y + s * 0.24f, s * 0.52f, s * 0.52f);
+                        foreach (float t in new[] { 0.38f, 0.62f })
+                        {
+                            g.DrawLine(pen, P(x, y, s, t, 0.06f), P(x, y, s, t, 0.24f));
+                            g.DrawLine(pen, P(x, y, s, t, 0.76f), P(x, y, s, t, 0.94f));
+                            g.DrawLine(pen, P(x, y, s, 0.06f, t), P(x, y, s, 0.24f, t));
+                            g.DrawLine(pen, P(x, y, s, 0.76f, t), P(x, y, s, 0.94f, t));
+                        }
+                        break;
                     case "phone":     // смартфон
                         using (var p = Ui.Round(new RectangleF(x + s * 0.26f, y + s * 0.06f, s * 0.48f, s * 0.88f), s * 0.1f)) g.DrawPath(pen, p);
                         g.DrawLine(pen, P(x, y, s, 0.44f, 0.8f), P(x, y, s, 0.56f, 0.8f));
@@ -262,7 +276,7 @@ namespace OpenForge
                 if (devHover == -1) Ui.FillRound(g, r, Ui.S(9), Ui.Mix(Ui.Side, Ui.Ink, 0.06f));
                 float s = Ui.S(16);
                 Icons.Draw(g, "phone", new RectangleF(r.X + Ui.S(12), r.Y + (r.Height - s) / 2f, s, s), Ui.Ink3);
-                Ui.Text(g, devStatus ?? "Підключи телефон кабелем", Ui.Small, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), Ui.Ink3, Ui.Left);
+                Ui.Text(g, devStatus ?? "Підключи телефон чи плату", Ui.Small, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), Ui.Ink3, Ui.Left);
                 return;
             }
             for (int i = 0; i < DevRows; i++)
@@ -271,7 +285,7 @@ namespace OpenForge
                 var r = DevRow(i);
                 if (devHover == i) Ui.FillRound(g, r, Ui.S(9), Ui.Mix(Ui.Side, Ui.Ink, 0.06f));
                 float s = Ui.S(17);
-                Icons.Draw(g, d.Kind == "apple" && d.Mode.StartsWith("DFU") ? "laptop" : "phone", new RectangleF(r.X + Ui.S(11), r.Y + (r.Height - s) / 2f, s, s), Ui.Ink2);
+                Icons.Draw(g, d.Kind == "board" ? "chip" : d.Kind == "apple" && d.Mode.StartsWith("DFU") ? "laptop" : "phone", new RectangleF(r.X + Ui.S(11), r.Y + (r.Height - s) / 2f, s, s), Ui.Ink2);
                 float dd = Ui.S(7);
                 using (var b = new SolidBrush(DevColor(d.State))) g.FillEllipse(b, r.X + Ui.S(22), r.Y + r.Height / 2f + Ui.S(2), dd, dd);
                 Ui.Text(g, d.Name, Ui.Body, new Rectangle(r.X + Ui.S(40), r.Y + Ui.S(2), r.Width - Ui.S(44), Ui.S(18)), Ui.Ink, Ui.Left);

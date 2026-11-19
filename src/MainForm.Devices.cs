@@ -14,7 +14,9 @@ namespace OpenForge
         void StartDevices()
         {
             sidebar.DeviceClicked += OnDeviceClicked;
-            Devices.Watch(list => { try { BeginInvoke((Action)(() => sidebar.Devices = list)); } catch { } });
+            // Стежити лише після створення вікна: інакше перший список (те, що вже підключено при запуску) губився.
+            Action go = () => Devices.Watch(list => { try { BeginInvoke((Action)(() => sidebar.Devices = list)); } catch { } });
+            if (IsHandleCreated) go(); else HandleCreated += (s, e) => go();
         }
 
         void OnDeviceClicked(DeviceInfo d, Point at)
@@ -35,6 +37,8 @@ namespace OpenForge
                     items.Add(new PopupItem("Вийти з Fastboot (перезавантажити)", false, () => DeviceCommand(d, fb, "reboot", "звичайне перезавантаження")));
                     items.Add(new PopupItem("Перезавантажити в Recovery", false, () => DeviceCommand(d, fb, "reboot recovery", "режим відновлення (Recovery)")));
                 }
+                if (d.Kind == "board" && d.Com.Length > 0)
+                    items.Add(new PopupItem("Скопіювати " + d.Com, false, () => { try { Clipboard.SetText(d.Com); } catch { } }) { Sub = "назва порту для Arduino IDE / esptool" });
                 if (d.Kind == "android" && Devices.ToolsDir == null)
                     items.Add(new PopupItem("Встановити інструменти Android", false, InstallTools) { Sub = "adb і fastboot від Google" });
             }
@@ -54,7 +58,8 @@ namespace OpenForge
             string text = d.Describe();
             attach.AddFile(new FileAttachment { Name = "Пристрій — " + d.Name + ".txt", Text = text, Chars = text.Length });
             if (chatInput.Box.Text.Trim().Length == 0)
-                chatInput.Box.Text = d.Kind == "apple" ? "Ось мій пристрій. Що з ним можна зробити в цьому режимі?" : "Ось мій телефон. Що з ним можна зробити в цьому режимі?";
+                chatInput.Box.Text = d.Kind == "board" ? "Ось моя плата. Допоможи з прошивкою." :
+                    d.Kind == "apple" ? "Ось мій пристрій. Що з ним можна зробити в цьому режимі?" : "Ось мій телефон. Що з ним можна зробити в цьому режимі?";
             chatInput.Box.SelectionStart = chatInput.Box.TextLength;
             chatInput.Box.Focus();
         }
@@ -82,7 +87,10 @@ namespace OpenForge
                 "Для подробиць (версія, завантажувач, режими) встанови інструменти Android — клік по «Підключи телефон кабелем».\n\n" +
                 "iPhone / iPad:\n" +
                 "Підключи кабелем і натисни «Довіряти цьому комп'ютеру». Для оновлення й відновлення потрібен iTunes або «Пристрої Apple» з Microsoft Store.\n\n" +
-                "Режими (Recovery, Fastboot, Download, DFU) Open Forge показує сам, щойно пристрій у них підключено.",
+                "Плати (ESP32, Arduino, Raspberry Pi Pico, STM32…):\n" +
+                "Підключи кабелем з передачею даних (не лише зарядним). Якщо немає COM-порту — встанови драйвер мікросхеми (CP210x, CH340 або FTDI).\n" +
+                "Pico в режимі прошивки: тримай BOOTSEL і підключи кабель.\n\n" +
+                "Режими (Recovery, Fastboot, Download, DFU, BOOTSEL) Open Forge показує сам, щойно пристрій у них підключено.",
                 "Як підключити пристрій", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 

@@ -26,6 +26,8 @@ namespace OpenForge
         readonly Label lblTitle, lblSub;
         readonly ThemeSwitch theme = new ThemeSwitch();
         readonly StatusPill status = new StatusPill();
+        RoundBtn ollamaBtn;
+        bool ollamaStarting;
         readonly Segmented settingsTabs = new Segmented { Items = Tabs, OnBg = true };
         readonly Control[] pages = new Control[4];
         int current = -1;
@@ -72,6 +74,9 @@ namespace OpenForge
             lblTitle.AutoEllipsis = lblSub.AutoEllipsis = true;
             status.Resized += () => OnResize(EventArgs.Empty);
             Controls.Add(status);
+            ollamaBtn = new RoundBtn { Icon = "power", Bg = () => Ui.Bg };
+            ollamaBtn.Click += (s, e) => OllamaButton();
+            Controls.Add(ollamaBtn);
             theme.Selected = Math.Max(0, Math.Min(2, Settings.GetInt("Theme", 0)));
             theme.Changed += i => { Settings.SetInt("Theme", i); ApplyTheme(); };
             Controls.Add(theme);
@@ -176,8 +181,9 @@ namespace OpenForge
             theme.Bounds = new Rectangle(right - Ui.S(108), Ui.S(30), Ui.S(108), Ui.S(32));
             int sw = Math.Max(Ui.S(120), status.Natural());
             status.Bounds = new Rectangle(theme.Left - Ui.S(12) - sw, Ui.S(30), sw, Ui.S(32));
-            lblTitle.Bounds = new Rectangle(x - Ui.S(3), Ui.S(22), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(36));
-            lblSub.Bounds = new Rectangle(x - Ui.S(1), Ui.S(56), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(20));   // не налазить на пігулку стану
+            ollamaBtn.Bounds = new Rectangle(status.Left - Ui.S(40), Ui.S(30), Ui.S(32), Ui.S(32));
+            lblTitle.Bounds = new Rectangle(x - Ui.S(3), Ui.S(22), Math.Max(10, ollamaBtn.Left - x - Ui.S(10)), Ui.S(36));
+            lblSub.Bounds = new Rectangle(x - Ui.S(1), Ui.S(56), Math.Max(10, ollamaBtn.Left - x - Ui.S(10)), Ui.S(20));   // не налазить на пігулку стану
             var area = new Rectangle(side, Ui.S(HeaderH), w - side, Math.Max(0, h - Ui.S(HeaderH)));
             pages[0].Bounds = area;
             // Вкладки «Моделі / Порівняння / Загальні» під заголовком «Налаштування».
@@ -213,6 +219,66 @@ namespace OpenForge
 
         // ── Ollama й оновлення у фоні ──────────────────────────────────────────
 
+        // Кнопка біля пігулки стану: запустити Ollama, а якщо працює — меню «Перезапустити / Зупинити».
+        void OllamaButton()
+        {
+            if (ollamaVersion == null)
+            {
+                if (!OllamaControl.Installed)
+                {
+                    if (MessageBox.Show(this, "Ollama не встановлена. Відкрити сторінку завантаження ollama.com?", "Open Forge",
+                            MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        try { System.Diagnostics.Process.Start(OllamaControl.DownloadUrl); } catch { }
+                    return;
+                }
+                StartOllama();
+                return;
+            }
+            PopupMenu.Show(ollamaBtn, new List<PopupItem>
+            {
+                new PopupItem("Перезапустити Ollama", false, () => RestartOllama(false)) { Sub = "якщо модель зависла" },
+                new PopupItem("Зупинити Ollama", false, () => RestartOllama(true)) { Sub = "звільнить відеопам'ять" },
+            });
+        }
+
+        void StartOllama()
+        {
+            string err = OllamaControl.Start();
+            if (err != null) { MessageBox.Show(this, "Не вдалося запустити Ollama:\n" + err, "Open Forge"); return; }
+            ollamaStarting = true;
+            status.Set("Запускаю Ollama…", Ui.Ink3);
+            // Перевіряти частіше, поки не запрацює (до ~30 с).
+            int tries = 0;
+            var t = new System.Windows.Forms.Timer { Interval = 1000 };
+            t.Tick += (s, e) =>
+            {
+                Poll();
+                if (ollamaVersion != null || ++tries > 30) { t.Stop(); t.Dispose(); if (ollamaVersion == null) { ollamaStarting = false; status.Set("Ollama не запущена", Ui.Orange); } }
+            };
+            t.Start();
+        }
+
+        void RestartOllama(bool stopOnly)
+        {
+            if (Busy && MessageBox.Show(this, "Модель зараз відповідає — відповідь обірветься. Продовжити?", "Open Forge",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            status.Set(stopOnly ? "Зупиняю Ollama…" : "Перезапускаю Ollama…", Ui.Ink3);
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                OllamaControl.Stop();
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        ollamaVersion = null;
+                        if (stopOnly) { status.Set("Ollama не запущена", Ui.Orange); Poll(); }
+                        else StartOllama();
+                    }));
+                }
+                catch { }
+            });
+        }
+
         void Poll()
         {
             if (polling) return;
@@ -231,8 +297,12 @@ namespace OpenForge
             bool changed = version != ollamaVersion || firstPoll;
             firstPoll = false;
             ollamaVersion = version;
-            if (version != null) status.Set("Ollama " + version + " працює", Ui.Green);
+            if (version != null) { ollamaStarting = false; status.Set("Ollama " + version + " працює", Ui.Green); }
+            else if (ollamaStarting) status.Set("Запускаю Ollama…", Ui.Ink3);
             else status.Set("Ollama не запущена", Ui.Orange);
+            ollamaBtn.Tip = version != null ? "Ollama: перезапустити або зупинити" : "Запустити Ollama";
+            bool prim = version == null && !ollamaStarting;
+            if (ollamaBtn.Primary != prim) { ollamaBtn.Primary = prim; ollamaBtn.Invalidate(); }
             if (list != null && !SameModels(list, models)) { models = list; changed = true; }
             else if (version == null && models.Count > 0) { models = new List<ModelInfo>(); changed = true; }
             if (!changed) return;

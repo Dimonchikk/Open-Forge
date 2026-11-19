@@ -21,7 +21,8 @@ namespace OpenForge
 
     class DeviceInfo
     {
-        public string Kind = "android";   // android | apple
+        public string Kind = "android";   // android | apple | board (ESP32, Arduino, Pico, STM32…)
+        public string Com = "";           // COM-порт плати
         public string Name = "", Mode = "", Serial = "", Vid = "", Pid = "";
         public DeviceState State;
         public string Transport = "";      // adb | fastboot | usb
@@ -35,14 +36,21 @@ namespace OpenForge
         {
             var sb = new StringBuilder();
             sb.AppendLine("Підключений кабелем пристрій (дані з Open Forge):");
-            sb.AppendLine("Тип: " + (Kind == "apple" ? "Apple (iPhone / iPad / Mac)" : "Android"));
+            sb.AppendLine("Тип: " + (Kind == "apple" ? "Apple (iPhone / iPad / Mac)" : Kind == "board" ? "Плата / мікроконтролер" : "Android"));
+            if (Com.Length > 0) sb.AppendLine("COM-порт: " + Com);
             sb.AppendLine("Назва: " + Name);
             sb.AppendLine("Режим: " + Mode);
             if (Serial.Length > 0) sb.AppendLine("Серійний номер / ID: " + Serial);
             if (Vid.Length > 0) sb.AppendLine("USB: VID " + Vid + ", PID " + Pid);
             foreach (var p in Props) sb.AppendLine(p.Key + ": " + p.Value);
             sb.AppendLine();
-            if (Kind == "android")
+            if (Kind == "board")
+            {
+                sb.AppendLine("Прошивають зазвичай через Arduino IDE, PlatformIO або esptool (ESP32/ESP8266: esptool.py --port " + (Com.Length > 0 ? Com : "COMx") +
+                              " ...). Raspberry Pi Pico у режимі BOOTSEL — скопіювати файл .uf2 на диск RPI-RP2 (або RP2350); STM32 у DFU — STM32CubeProgrammer або dfu-util.");
+                sb.AppendLine("Агент Open Forge може запускати ці інструменти командами, якщо вони встановлені.");
+            }
+            else if (Kind == "android")
             {
                 sb.AppendLine(Devices.ToolsDir != null
                     ? "На ПК встановлено Android Platform Tools (adb і fastboot); агент Open Forge може запускати їх командами adb / fastboot."
@@ -150,11 +158,77 @@ namespace OpenForge
             { "17EF", "Lenovo" }, { "0B05", "ASUS" }, { "2A45", "Meizu" }, { "1EBF", "Nothing" }, { "29A9", "Tecno / Infinix" },
         };
 
-        internal class PnpGroup { public string Vid, Pid, Serial = "", Name = "", Names = ""; public bool Adb, Boot, Mtp; }
+        internal class PnpGroup
+        {
+            public string Vid, Pid, Serial = "", Name = "", Names = "";
+            public bool Adb, Boot, Mtp;
+            public string Com { get { var m = Regex.Match(Names, @"\((COM\d+)\)"); return m.Success ? m.Groups[1].Value : ""; } }
+        }
+
+        // Плати й USB-UART мікросхеми: VID:PID (або лише VID) → назва, режим, стан.
+        static readonly Dictionary<string, string[]> Boards = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "303A:1001", new[] { "ESP32-S3 / C3 / C6", "вбудований USB (USB-JTAG/Serial)", "ok" } },
+            { "303A:0002", new[] { "ESP32-S2", "вбудований USB", "ok" } },
+            { "303A", new[] { "Плата Espressif (ESP32)", "", "ok" } },
+            { "10C4:EA60", new[] { "ESP32 / ESP8266 (CP210x)", "USB-UART CP210x", "ok" } },
+            { "1A86:7523", new[] { "Плата з CH340", "USB-UART CH340", "ok" } },
+            { "1A86:7522", new[] { "Плата з CH340K", "USB-UART CH340K", "ok" } },
+            { "1A86:55D4", new[] { "ESP32 (CH9102)", "USB-UART CH9102", "ok" } },
+            { "1A86:55D3", new[] { "ESP32 (CH343)", "USB-UART CH343", "ok" } },
+            { "0403:6001", new[] { "Плата / адаптер FTDI", "USB-UART FT232", "ok" } },
+            { "0403:6010", new[] { "Плата / адаптер FTDI", "USB-UART FT2232", "ok" } },
+            { "0403:6014", new[] { "Плата / адаптер FTDI", "USB-UART FT232H", "ok" } },
+            { "0403:6015", new[] { "Плата / адаптер FTDI", "USB-UART FT-X", "ok" } },
+            { "2341:0043", new[] { "Arduino Uno", "", "ok" } }, { "2341:0001", new[] { "Arduino Uno", "", "ok" } },
+            { "2341:0042", new[] { "Arduino Mega 2560", "", "ok" } }, { "2341:0010", new[] { "Arduino Mega 2560", "", "ok" } },
+            { "2341:8036", new[] { "Arduino Leonardo", "", "ok" } }, { "2341:0036", new[] { "Arduino Leonardo", "завантажувач", "boot" } },
+            { "2341:8037", new[] { "Arduino Micro", "", "ok" } }, { "2341:0058", new[] { "Arduino Nano Every", "", "ok" } },
+            { "2341:805A", new[] { "Arduino Nano 33 BLE", "", "ok" } }, { "2341:1002", new[] { "Arduino Uno R4 WiFi", "", "ok" } },
+            { "2341:0069", new[] { "Arduino Uno R4 Minima", "", "ok" } },
+            { "2341", new[] { "Плата Arduino", "", "ok" } }, { "2A03", new[] { "Плата Arduino", "", "ok" } },
+            { "2E8A:0003", new[] { "Raspberry Pi Pico (RP2040)", "BOOTSEL · прошивка .uf2", "boot" } },
+            { "2E8A:000F", new[] { "Raspberry Pi Pico 2 (RP2350)", "BOOTSEL · прошивка .uf2", "boot" } },
+            { "2E8A:0005", new[] { "Raspberry Pi Pico", "MicroPython", "ok" } },
+            { "2E8A:000A", new[] { "Raspberry Pi Pico", "Pico SDK", "ok" } },
+            { "2E8A", new[] { "Плата Raspberry Pi", "", "ok" } },
+            { "0483:DF11", new[] { "STM32", "DFU · режим прошивки", "boot" } },
+            { "0483:5740", new[] { "STM32", "віртуальний COM-порт", "ok" } },
+            { "0483:374B", new[] { "ST-Link (програматор STM32)", "", "ok" } }, { "0483:3748", new[] { "ST-Link (програматор STM32)", "", "ok" } },
+            { "0483:374E", new[] { "ST-Link (програматор STM32)", "", "ok" } }, { "0483:3752", new[] { "ST-Link (програматор STM32)", "", "ok" } },
+            { "16C0:0483", new[] { "Teensy", "", "ok" } }, { "16C0:0478", new[] { "Teensy", "завантажувач", "boot" } },
+            { "0D28:0204", new[] { "BBC micro:bit", "", "ok" } },
+            { "239A", new[] { "Плата Adafruit", "", "ok" } }, { "2886", new[] { "Плата Seeed (XIAO тощо)", "", "ok" } },
+            { "1B4F", new[] { "Плата SparkFun", "", "ok" } }, { "1366", new[] { "SEGGER J-Link (програматор)", "", "ok" } },
+        };
+
+        internal static DeviceInfo BoardFrom(PnpGroup g)
+        {
+            string[] b;
+            if (!Boards.TryGetValue(g.Vid + ":" + g.Pid, out b) && !Boards.TryGetValue(g.Vid, out b)) return null;
+            var d = new DeviceInfo { Kind = "board", Vid = g.Vid, Pid = g.Pid, Serial = g.Serial, Transport = "usb", Com = g.Com, Name = b[0] };
+            bool boot = b[2] == "boot";
+            d.State = boot ? DeviceState.Service : d.Com.Length > 0 ? DeviceState.Ok : DeviceState.Attention;
+            string mode = b[1].Length > 0 && !b[1].StartsWith("USB-UART") ? b[1] : "";
+            d.Mode = boot ? b[1] : (d.Com.Length > 0 ? d.Com : "немає COM — потрібен драйвер") + (mode.Length > 0 ? " · " + mode : "");
+            if (b[1].StartsWith("USB-UART")) Add(d, "Мікросхема зв'язку", b[1].Substring(9));
+            return d;
+        }
 
         static List<PnpGroup> UsbDevices()
         {
             var groups = new Dictionary<string, PnpGroup>();
+            // Для перевірки без заліза: OPENFORGE_FAKE_USB="10C4:EA60:CP210x (COM5);2E8A:0003:RP2 Boot"
+            string fake = Environment.GetEnvironmentVariable("OPENFORGE_FAKE_USB");
+            if (!string.IsNullOrEmpty(fake))
+            {
+                foreach (var e in fake.Split(';'))
+                {
+                    var f = e.Split(new[] { ':' }, 3);
+                    if (f.Length == 3) groups[f[0] + f[1]] = new PnpGroup { Vid = f[0], Pid = f[1], Name = f[2], Names = f[2] };
+                }
+                return new List<PnpGroup>(groups.Values);
+            }
             try
             {
                 using (var s = new ManagementObjectSearcher("SELECT Name, PNPDeviceID FROM Win32_PnPEntity WHERE PNPDeviceID LIKE 'USB%'"))
@@ -180,6 +254,8 @@ namespace OpenForge
 
         internal static DeviceInfo FromPnp(PnpGroup g)
         {
+            var board = BoardFrom(g);
+            if (board != null) return board;
             int pid = int.Parse(g.Pid, NumberStyles.HexNumber);
             if (g.Vid == "05AC")
             {
@@ -330,7 +406,7 @@ namespace OpenForge
                             if (sig != last) { last = sig; changed(list); }
                         }
                     }
-                    catch { }
+                    catch (Exception ex) { if (Environment.GetEnvironmentVariable("OPENFORGE_FAKE_USB") != null) Console.Error.WriteLine("devices: " + ex); }
                     Thread.Sleep(4000);
                 }
             }) { IsBackground = true, Priority = ThreadPriority.BelowNormal };
