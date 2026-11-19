@@ -691,7 +691,11 @@ namespace OpenForge
             if (shots != null) answer.Images = shots;
             var details = run.StepDetails(ref stepsSeen);
             if (details != null) answer.StepDetails = details;
-            if (t != null || shots != null || details != null) { if (t != null) answer.Raw = t; chatList.Changed(answer); }
+            if (t != null || shots != null || details != null)
+            {
+                if (t != null) { answer.Raw = t; answer.StepAt = DateTime.UtcNow; }
+                chatList.Changed(answer);
+            }
             else chatList.Invalidate();   // крапки й таймер у рядку кроків
             if (!run.Done) return;
             agent = null;

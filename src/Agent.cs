@@ -415,7 +415,9 @@ namespace OpenForge
 
         Dictionary<string, object> Ask(List<object> messages)
         {
-            var body = new Dictionary<string, object> { { "model", model }, { "messages", messages }, { "tools", Tools }, { "stream", false }, { "options", Ollama.Options() } };
+            // Потоком, як у чаті: думки й текст моделі видно одразу, а не лише після всієї відповіді
+            // (на великій моделі один крок може тривати хвилини).
+            var body = new Dictionary<string, object> { { "model", model }, { "messages", messages }, { "tools", Tools }, { "stream", true }, { "options", Ollama.Options() } };
             byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
             var r = (HttpWebRequest)WebRequest.Create(Ollama.Host + "/api/chat");
             r.Method = "POST";
@@ -427,9 +429,43 @@ namespace OpenForge
             using (var rs = r.GetRequestStream()) rs.Write(data, 0, data.Length);
             try
             {
+                var content = new StringBuilder();
+                var calls = new List<object>();
+                bool thinking = false, wroteContent = false;
                 using (var resp = r.GetResponse())
                 using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
-                    return Json.DeserializeObject(sr.ReadToEnd()) as Dictionary<string, object>;
+                {
+                    string line;
+                    while (!cancel && (line = sr.ReadLine()) != null)
+                    {
+                        if (line.Length == 0) continue;
+                        var d = Json.DeserializeObject(line) as Dictionary<string, object>;
+                        if (d == null) continue;
+                        if (d.ContainsKey("error")) throw new Exception(Convert.ToString(d["error"]));
+                        var msg = d.ContainsKey("message") ? d["message"] as Dictionary<string, object> : null;
+                        string th = Arg(msg, "thinking"), c = Arg(msg, "content");
+                        if (th.Length > 0)
+                        {
+                            if (!thinking) { Write("<think>"); thinking = true; }   // без переносу — щоб на місці думок не лишалось порожнього рядка
+                            Write(th);
+                        }
+                        var tc = msg != null && msg.ContainsKey("tool_calls") ? msg["tool_calls"] as object[] : null;
+                        if ((c.Length > 0 || tc != null) && thinking) { Write("</think>"); thinking = false; }
+                        if (c.Length > 0)
+                        {
+                            if (!wroteContent && content.Length == 0) Write(Text.Length > 0 ? "\n\n" : "");
+                            wroteContent = true;
+                            content.Append(c);
+                            Write(c);
+                        }
+                        if (tc != null) calls.AddRange(tc);
+                        if (d.ContainsKey("done") && d["done"] is bool && (bool)d["done"]) break;
+                    }
+                }
+                if (thinking) Write("</think>");
+                var result = new Dictionary<string, object> { { "role", "assistant" }, { "content", StripThink(content.ToString()).Trim() } };
+                if (calls.Count > 0) result["tool_calls"] = calls.ToArray();
+                return new Dictionary<string, object> { { "message", result } };
             }
             catch (WebException ex)
             {
@@ -473,9 +509,7 @@ namespace OpenForge
                     var msg = resp != null && resp.ContainsKey("message") ? resp["message"] as Dictionary<string, object> : null;
                     if (msg == null) throw new Exception("Ollama повернула порожню відповідь");
                     messages.Add(msg);
-                    string content = Arg(msg, "content");
-                    content = StripThink(content).Trim();
-                    if (content.Length > 0) Write((Text.Length > 0 ? "\n\n" : "") + content);
+                    // Текст моделі вже показано потоком у Ask.
 
                     var calls = msg.ContainsKey("tool_calls") ? msg["tool_calls"] as object[] : null;
                     if (calls == null || calls.Length == 0) return;

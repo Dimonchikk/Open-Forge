@@ -36,6 +36,7 @@ namespace OpenForge
         public bool ThinkOpen;       // міркування моделі розгорнуті
         public double ThinkSec;      // скільки модель міркувала (0 — невідомо)
         public DateTime StartedAt = DateTime.UtcNow;
+        public DateTime StepAt;      // коли агент востаннє щось зробив (для таймера поточного кроку)
         internal string Site;        // index.html, який зробив агент (для «Переглянути сайт»)
         internal bool SiteChecked;
 
@@ -55,7 +56,8 @@ namespace OpenForge
             get
             {
                 string s = Raw;
-                if (!IsUser && s.IndexOf("<think>", StringComparison.Ordinal) >= 0) s = StripThink(s);
+                if (!IsUser && s.IndexOf("<think>", StringComparison.Ordinal) >= 0)
+                    s = System.Text.RegularExpressions.Regex.Replace(StripThink(s).Replace("\r", ""), "\n[ \t]*\n(?:[ \t]*\n)+", "\n\n");   // без порожнечі на місці думок
                 return s.Replace("\r", "").Replace("\t", "    ").Trim('\n', ' ');
             }
         }
@@ -167,7 +169,7 @@ namespace OpenForge
 
         const TextFormatFlags NF = TextFormatFlags.NoPadding | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine;
         const int ChunkChars = 2000;   // дуже довгі рядки ріжемо на шматки — так їх швидше міряти
-        readonly Dictionary<string, int>[] widths = { new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>() };
+        readonly Dictionary<string, int>[] widths = { new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>(), new Dictionary<string, int>() };
 
         public MessageList()
         {
@@ -258,11 +260,11 @@ namespace OpenForge
                 case 3: return h1Font ?? (h1Font = new Font("Segoe UI Semibold", 14.5f));
                 case 4: return h2Font ?? (h2Font = new Font("Segoe UI Semibold", 12.5f));
                 case 5: return inlineMono ?? (inlineMono = new Font("Consolas", 9.75f));
-                default: return Ui.Chat;
+                default: return Ui.Chat;   // 6 і 7 — звичайний шрифт для зеленої ✓ і червоної ✗ у кроках агента
             }
         }
 
-        readonly int[] lineHs = new int[6];
+        readonly int[] lineHs = new int[8];
         int LineHF(int fi)
         {
             if (lineHs[fi] == 0) lineHs[fi] = TextRenderer.MeasureText("Ag", F(fi), Size.Empty, NF).Height + (fi == 1 ? Ui.S(1) : 0);
@@ -452,7 +454,15 @@ namespace OpenForge
                     int k = stepNo++;
                     if (m.StepsOpen)
                     {
-                        paras.Add(new Para { Kind = Para.Text, Str = st, Start = start, Step = true, Indent = StepIndent, StepIdx = k });
+                        var sp = new Para { Kind = Para.Text, Str = st, Start = start, Step = true, Indent = StepIndent, StepIdx = k };
+                        int ok = st.IndexOf('✓'), bad = st.IndexOf('✗');
+                        if (ok >= 0 || bad >= 0)
+                        {
+                            sp.Sty = new byte[st.Length];
+                            if (ok >= 0) sp.Sty[ok] = 6;
+                            if (bad >= 0) sp.Sty[bad] = 7;
+                        }
+                        paras.Add(sp);
                         if (m.OpenSteps.Contains(k)) AddStepDetail(m, k, paras);
                     }
                     continue;
@@ -559,7 +569,9 @@ namespace OpenForge
             {
                 string cur = lastSteps.StepList[lastSteps.StepList.Count - 1];
                 int mark = cur.IndexOf("  ");
-                lastSteps.Summary = "Працює: " + (mark > 0 ? cur.Substring(0, mark) : cur);
+                bool finished = cur.Contains("  ✓") || cur.Contains("  ✗");
+                // Крок уже завершився — модель думає над наступним, а не «працює» над старим.
+                lastSteps.Summary = finished ? "Думає, що робити далі" : "Працює: " + (mark > 0 ? cur.Substring(0, mark) : cur);
             }
             if (inCode)   // блок ще пишеться — закриваємо його візуально
             {
@@ -1265,7 +1277,7 @@ namespace OpenForge
                     Ui.FillRound(g, cr, Ui.S(4), Ui.Dark ? Ui.Mix(Ui.Bg, Color.White, 0.08f) : Ui.Mix(Ui.Bg, Ui.Ink, 0.07f));
                     TextRenderer.DrawText(g, run, F(5), new Point(x + CodePadX, y + (lh - LineHF(5)) / 2), fore, NF);
                 }
-                else TextRenderer.DrawText(g, run, F(st), new Point(x, y + (lh - LineHF(st)) / 2), fore, NF);
+                else TextRenderer.DrawText(g, run, F(st), new Point(x, y + (lh - LineHF(st)) / 2), st == 6 ? Ui.Green : st == 7 ? Ui.Red : fore, NF);
                 x += rw;
                 i = j;
             }
@@ -1329,7 +1341,7 @@ namespace OpenForge
         static bool IsLive(ChatMessage m, Para p)
         {
             if (p.Kind == Para.Think) return m.Streaming && m.InThink;
-            return m.Streaming && (p.Live || (p.Summary != null && p.Summary.StartsWith("Працює: ")));
+            return m.Streaming && (p.Live || (p.Summary != null && (p.Summary.StartsWith("Працює: ") || p.Summary == "Думає, що робити далі")));
         }
 
         static string Dur(double sec)
@@ -1346,7 +1358,9 @@ namespace OpenForge
                 return m.ThinkSec >= 1 ? "Думав " + Dur(m.ThinkSec) : "Міркування моделі";
             }
             if (!IsLive(m, p)) return p.Summary ?? "";
-            return p.Summary + "   " + Dur((DateTime.UtcNow - m.StartedAt).TotalSeconds);
+            // Таймер — від останньої дії агента (скільки триває саме цей крок), а не від початку всього завдання.
+            DateTime from = p.Live || m.StepAt == default(DateTime) ? m.StartedAt : m.StepAt;
+            return p.Summary + "   " + Dur((DateTime.UtcNow - from).TotalSeconds);
         }
 
         Rectangle StepsRect(PV v)
