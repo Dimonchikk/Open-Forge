@@ -14,6 +14,8 @@ namespace OpenForge
         static readonly string[] Purposes = { "Усі", "Чат", "Код", "Зображення", "Міркування", "Переклад", "Швидкі", "Встановлені" };
         static readonly string[] Censors = { "Будь-які", "З цензурою", "Без цензури" };
         static readonly string[] Fits = { "Усі", "Потягне мій ПК", "Тільки швидкі" };
+        static readonly string[] Sorts = { "Рекомендовані", "Від сильної до слабкої", "Від слабкої до сильної", "Від легкої до важкої", "Від важкої до легкої", "За назвою" };
+        PillBtn sortBtn;
 
         ScrollHost modelsHost;
         Segmented purposeSeg, censorSeg, fitSeg;
@@ -46,6 +48,11 @@ namespace OpenForge
             fitSeg.ItemClicked += i => { fitSeg.Selected = i; Settings.SetInt("ModelsFit", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
             box.Controls.Add(fitSeg);
 
+            sortBtn = new PillBtn { Icon = "chevron", OnBg = true };
+            sortBtn.Click += (s, e) => ShowSortMenu();
+            box.Controls.Add(sortBtn);
+            UpdateSortBtn();
+
             modelSearch = new InputBox { Around = () => Ui.Bg };
             modelSearch.Box.Hint = "Пошук: qwen, кодер, переклад…";
             modelSearch.Box.TextChanged += (s, e) => { RefreshModelsPage(); modelsHost.ScrollTo(0); };
@@ -63,27 +70,8 @@ namespace OpenForge
 
             pullTimer.Tick += (s, e) => PumpPulls();
 
-            box.Resize += (s, e) =>
-            {
-                int x = Ui.S(32), w = ModelsWidth(box.Width), y = Ui.S(4);
-                purposeSeg.Bounds = new Rectangle(x, y, Math.Min(w, Ui.S(920)), Ui.S(32));
-                y += Ui.S(44);
-                int cw = Math.Min(Ui.S(320), w / 2), fw = Math.Min(Ui.S(380), w - cw - Ui.S(12));
-                censorSeg.Bounds = new Rectangle(x, y, cw, Ui.S(32));
-                fitSeg.Bounds = new Rectangle(x + cw + Ui.S(12), y, fw, Ui.S(32));
-                int sx = fitSeg.Right + Ui.S(12);
-                if (x + w - sx >= Ui.S(220))   // пошук влазить у той самий рядок
-                    modelSearch.Bounds = new Rectangle(sx, y - Ui.S(2), Math.Min(x + w - sx, Ui.S(440)), Ui.S(36));
-                else
-                {
-                    y += Ui.S(46);
-                    modelSearch.Bounds = new Rectangle(x, y - Ui.S(2), Math.Min(w, Ui.S(560)), Ui.S(36));
-                }
-                y += Ui.S(46);
-                modelsInfo.Bounds = new Rectangle(x + Ui.S(4), y, w, Ui.S(18));
-                y += Ui.S(28);
-                modelsHost.Bounds = new Rectangle(0, y, box.Width, Math.Max(0, box.Height - y));
-            };
+            modelsBox = box;
+            box.Resize += (s, e) => LayoutModelsHeader();
             modelsHost.Arrange += () =>
             {
                 int w = ModelsWidth(modelsHost.Width);
@@ -93,7 +81,63 @@ namespace OpenForge
             return box;
         }
 
+        Control modelsBox;
+
+        void LayoutModelsHeader()
+        {
+            var box = modelsBox;
+            {
+                int x = Ui.S(32), w = ModelsWidth(box.Width), y = Ui.S(4);
+                purposeSeg.Bounds = new Rectangle(x, y, Math.Min(w, Ui.S(920)), Ui.S(32));
+                y += Ui.S(44);
+                int cw = Math.Min(Ui.S(320), w / 2), fw = Math.Min(Ui.S(380), w - cw - Ui.S(12));
+                censorSeg.Bounds = new Rectangle(x, y, cw, Ui.S(32));
+                fitSeg.Bounds = new Rectangle(x + cw + Ui.S(12), y, fw, Ui.S(32));
+                int sx = fitSeg.Right + Ui.S(12), bw = sortBtn.Natural();
+                if (x + w - sx - bw - Ui.S(12) < Ui.S(220))   // пошук і сортування не влазять у той самий рядок — переносимо
+                {
+                    y += Ui.S(46);
+                    sx = x;
+                }
+                int sw = Math.Min(x + w - sx - bw - Ui.S(12), Ui.S(440));
+                modelSearch.Bounds = new Rectangle(sx, y - Ui.S(2), sw, Ui.S(36));
+                sortBtn.Bounds = new Rectangle(modelSearch.Right + Ui.S(12), y, bw, Ui.S(32));
+                y += Ui.S(46);
+                modelsInfo.Bounds = new Rectangle(x + Ui.S(4), y, w, Ui.S(18));
+                y += Ui.S(28);
+                modelsHost.Bounds = new Rectangle(0, y, box.Width, Math.Max(0, box.Height - y));
+            }
+        }
+
         static int ModelsWidth(int total) { return Math.Max(Ui.S(300), Math.Min(total - Ui.S(64), Ui.S(1560))); }
+
+        void UpdateSortBtn()
+        {
+            int i = Math.Max(0, Math.Min(Sorts.Length - 1, Settings.GetInt("ModelsSort", 0)));
+            sortBtn.Text = "Сортування: " + Sorts[i].Substring(0, 1).ToLower() + Sorts[i].Substring(1);
+            sortBtn.Invalidate();
+        }
+
+        void ShowSortMenu()
+        {
+            var menu = new ContextMenuStrip();
+            int cur = Settings.GetInt("ModelsSort", 0);
+            for (int i = 0; i < Sorts.Length; i++)
+            {
+                int k = i;
+                var it = new ToolStripMenuItem(Sorts[i]) { Checked = i == cur };
+                it.Click += (s, e) =>
+                {
+                    Settings.SetInt("ModelsSort", k);
+                    UpdateSortBtn();
+                    LayoutModelsHeader();   // ширина кнопки змінилась
+                    RefreshModelsPage();
+                    modelsHost.ScrollTo(0);
+                };
+                menu.Items.Add(it);
+            }
+            menu.Show(sortBtn, new Point(0, sortBtn.Height + Ui.S(4)));
+        }
 
         void DetectHardware()
         {
@@ -144,9 +188,20 @@ namespace OpenForge
             double vram = Hardware.VramGb, ram = Hardware.RamGb;
             // Спершу встановлені, далі те, що піде швидко, потім повільніше, потім те, що не потягне;
             // всередині — найсильніші зверху, а за однакової сили — порядок каталогу.
-            var shown = list.Select((m, i) => new { m, i })
-                .OrderBy(x => x.m.Installed ? 0 : 1).ThenBy(x => x.m.Known ? (int)x.m.FitFor(vram, ram) : -1)
-                .ThenByDescending(x => x.m.Known ? x.m.Power : 0).ThenBy(x => x.i).Select(x => x.m).ToList();
+            var idx = list.Select((m, i) => new { m, i });
+            List<CatalogModel> shown;
+            switch (Settings.GetInt("ModelsSort", 0))
+            {
+                case 1: shown = idx.OrderByDescending(x => x.m.Known ? x.m.Power : 0).ThenByDescending(x => x.m.SizeGb).Select(x => x.m).ToList(); break;
+                case 2: shown = idx.OrderBy(x => x.m.Known ? x.m.Power : 0).ThenBy(x => x.m.SizeGb).Select(x => x.m).ToList(); break;
+                case 3: shown = idx.OrderBy(x => x.m.SizeGb).ThenBy(x => x.i).Select(x => x.m).ToList(); break;
+                case 4: shown = idx.OrderByDescending(x => x.m.SizeGb).ThenBy(x => x.i).Select(x => x.m).ToList(); break;
+                case 5: shown = idx.OrderBy(x => x.m.Name, StringComparer.CurrentCultureIgnoreCase).Select(x => x.m).ToList(); break;
+                default:
+                    shown = idx.OrderBy(x => x.m.Installed ? 0 : 1).ThenBy(x => x.m.Known ? (int)x.m.FitFor(vram, ram) : -1)
+                        .ThenByDescending(x => x.m.Known ? x.m.Power : 0).ThenBy(x => x.i).Select(x => x.m).ToList();
+                    break;
+            }
 
             modelList.Items = shown;
             modelList.VramGb = vram;
