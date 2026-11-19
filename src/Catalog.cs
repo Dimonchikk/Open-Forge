@@ -7,7 +7,9 @@ using System.Linq;
 
 namespace OpenForge
 {
-    enum Fit { Fast, Slow, No }
+    // Як модель піде на цьому ПК: Fast — уся у відеопам'яті; Ok — частина в RAM, але це MoE (рахує мало параметрів, тож терпимо);
+    // Slow — звичайна модель, частина в RAM (у рази повільніше); No — пам'яті не вистачить.
+    enum Fit { Fast, Ok, Slow, No }
 
     class CatalogModel
     {
@@ -68,7 +70,7 @@ namespace OpenForge
             double need = SizeGb + 1.0;
             if (vramGb >= 2 && need <= vramGb) return Fit.Fast;
             if (vramGb < 2 && SizeGb <= 2.6) return Fit.Fast;          // без відеокарти маленькі моделі все одно швидкі
-            if (ramGb <= 0 || need <= vramGb + ramGb * 0.6) return Fit.Slow;   // ~40 % RAM лишаємо Windows і програмам
+            if (ramGb <= 0 || need <= vramGb + ramGb * 0.6) return Moe ? Fit.Ok : Fit.Slow;   // ~40 % RAM лишаємо Windows і програмам
             return Fit.No;
         }
     }

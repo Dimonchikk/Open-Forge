@@ -354,8 +354,9 @@ namespace OpenForge
                     it.Badges = ModelList.BadgesOf(c);
                     it.Power = c.Power;
                     var fit = c.FitFor(Hardware.VramGb, Hardware.RamGb);
-                    if (Hardware.Done) it.Dot = fit == Fit.Fast ? Ui.Green : fit == Fit.Slow ? Ui.Orange : Ui.Red;
-                    it.Detail = "· " + gb + " · " + (!Hardware.Done ? name : fit == Fit.Fast ? "швидко" : fit == Fit.Slow ? "повільніше — частина в RAM" : "не потягне ПК");
+                    if (Hardware.Done) it.Dot = ModelList.FitColor(fit);
+                    string fl = ModelList.FitLabel(fit);
+                    it.Detail = "· " + gb + " · " + (!Hardware.Done ? name : fl.Substring(0, 1).ToLower() + fl.Substring(1));
                 }
                 else it.Detail = gb + " · " + (string.IsNullOrEmpty(m.Params) ? "" : m.Params + " параметрів · ") + "немає в каталозі";
                 items.Add(it);

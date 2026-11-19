@@ -13,7 +13,7 @@ namespace OpenForge
     {
         static readonly string[] Purposes = { "Усі", "Чат", "Код", "Зображення", "Міркування", "Переклад", "Швидкі", "Встановлені" };
         static readonly string[] Censors = { "Будь-які", "З цензурою", "Без цензури" };
-        static readonly string[] Fits = { "Усі", "Потягне мій ПК", "Тільки швидкі" };
+        static readonly string[] Fits = { "Усі", "Запуститься", "Піде нормально", "Тільки швидкі" };
         static readonly string[] Sorts = { "Рекомендовані", "Від сильної до слабкої", "Від слабкої до сильної", "Від легкої до важкої", "Від важкої до легкої", "За назвою" };
         PillBtn sortBtn;
 
@@ -44,7 +44,7 @@ namespace OpenForge
             box.Controls.Add(censorSeg);
 
             fitSeg = new Segmented { Items = Fits, OnBg = true };
-            fitSeg.Selected = Math.Max(0, Math.Min(2, Settings.GetInt("ModelsFit", 0)));
+            fitSeg.Selected = Math.Max(0, Math.Min(Fits.Length - 1, Settings.GetInt("ModelsFit", 0)));
             fitSeg.ItemClicked += i => { fitSeg.Selected = i; Settings.SetInt("ModelsFit", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
             box.Controls.Add(fitSeg);
 
@@ -90,7 +90,7 @@ namespace OpenForge
                 int x = Ui.S(32), w = ModelsWidth(box.Width), y = Ui.S(4);
                 purposeSeg.Bounds = new Rectangle(x, y, Math.Min(w, Ui.S(920)), Ui.S(32));
                 y += Ui.S(44);
-                int cw = Math.Min(Ui.S(320), w / 2), fw = Math.Min(Ui.S(380), w - cw - Ui.S(12));
+                int cw = Math.Min(Ui.S(320), w / 2), fw = Math.Min(Ui.S(470), w - cw - Ui.S(12));
                 censorSeg.Bounds = new Rectangle(x, y, cw, Ui.S(32));
                 fitSeg.Bounds = new Rectangle(x + cw + Ui.S(12), y, fw, Ui.S(32));
                 int sx = fitSeg.Right + Ui.S(12), bw = sortBtn.Natural();
@@ -179,7 +179,7 @@ namespace OpenForge
             if (c == 2) list = list.Where(m => m.Uncensored);
             int fsel = fitSeg.Selected;
             if (fsel > 0 && Hardware.Done && Hardware.RamGb > 0)
-                list = list.Where(m => !m.Known || m.FitFor(Hardware.VramGb, Hardware.RamGb) <= (fsel == 1 ? Fit.Slow : Fit.Fast));
+                list = list.Where(m => !m.Known || m.FitFor(Hardware.VramGb, Hardware.RamGb) <= (fsel == 1 ? Fit.Slow : fsel == 2 ? Fit.Ok : Fit.Fast));
             if (q.Length > 0)
                 list = list.Where(m => m.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 || m.Id.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
                                        m.Description.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);

@@ -66,6 +66,23 @@ namespace OpenForge
             return res;
         }
 
+        // Як піде на цьому ПК — колір і підпис (однакові в каталозі й у виборі моделі).
+        internal static Color FitColor(Fit f)
+        {
+            return f == Fit.Fast ? Ui.Green : f == Fit.Ok ? Ui.Orange : f == Fit.Slow ? Ui.Mix(Ui.Orange, Ui.Red, 0.6f) : Ui.Red;
+        }
+
+        internal static string FitLabel(Fit f)
+        {
+            switch (f)
+            {
+                case Fit.Fast: return "Швидко на твоєму ПК";
+                case Fit.Ok: return "Нормально — MoE, частина в RAM";
+                case Fit.Slow: return "Повільно — частина в RAM";
+                default: return "Не потягне твій ПК";
+            }
+        }
+
         // Позначки моделі: «Без цензури», «Код + картинки» / «Розуміє картинки», «Міркує», «Код».
         public static List<KeyValuePair<string, Color>> BadgesOf(CatalogModel m)
         {
@@ -162,9 +179,8 @@ namespace OpenForge
                 {
                     // Чи потягне цей ПК: зелене — швидко, помаранчеве — повільніше, червоне — не потягне.
                     var fit = m.FitFor(VramGb, RamGb);
-                    Color c = fit == Fit.Fast ? Ui.Green : fit == Fit.Slow ? Ui.Orange : Ui.Red;
-                    string ft = !Hardware.Done ? "Визначаю, чи піде…" :
-                        fit == Fit.Fast ? "Швидко на твоєму ПК" : fit == Fit.Slow ? "Повільніше — частина в RAM" : "Не потягне твій ПК";
+                    Color c = FitColor(fit);
+                    string ft = !Hardware.Done ? "Визначаю, чи піде…" : FitLabel(fit);
                     if (!Hardware.Done) c = Ui.Ink3;
                     float d = Ui.S(7);
                     using (var b = new SolidBrush(c)) g.FillEllipse(b, x, my + (Ui.S(18) - d) / 2f, d, d);
