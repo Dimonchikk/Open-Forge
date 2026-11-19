@@ -19,7 +19,7 @@ namespace OpenForge
 {
     enum AgentPermission { Manual, Auto, Full }
 
-    class AgentRun
+    partial class AgentRun
     {
         public const int MaxSteps = 30;
         readonly string root, model, instruction;
@@ -150,11 +150,22 @@ namespace OpenForge
                  "The screenshot is shown to the user and, if you can see images, to you.",
                 new Dictionary<string, object> { { "target", Str("Path to an .html file in the project folder, or an http(s) URL (e.g. http://localhost:5173).") },
                                                  { "width", new Dictionary<string, object> { { "type", "integer" }, { "description", "Viewport width in px (default 1280; use 390 for a phone)." } } } }, "target"),
-            Tool("start_program", "Start a program or server in the project folder WITHOUT waiting for it to finish (e.g. a GUI app or 'npm run dev'). " +
-                 "Use screenshot_window afterwards to see a GUI app.",
+            Tool("start_program", "Start a program or server in the project folder WITHOUT waiting for it to finish (e.g. a GUI app, " +
+                 "'powershell -ExecutionPolicy Bypass -File app.ps1', 'python app.py' or 'npm run dev'). If the program opens a window, " +
+                 "you automatically get its title, a screenshot and the list of its buttons and fields.",
                 new Dictionary<string, object> { { "command", Str(null) } }, "command"),
             Tool("screenshot_window", "Take a screenshot of an open window whose title contains the given text (e.g. a program you started).",
                 new Dictionary<string, object> { { "title", Str("Part of the window title.") } }, "title"),
+            Tool("window_action", "Use a window of a program you started, like a person testing it: click a button / menu item / tab by its text, " +
+                 "type into a field, press keys or close the window. You get a new screenshot and the element list after every action.",
+                new Dictionary<string, object> {
+                    { "title", Str("Part of the window title.") },
+                    { "action", new Dictionary<string, object> { { "type", "string" }, { "enum", new[] { "click", "double_click", "right_click", "type", "key", "close" } },
+                                                                 { "description", "click (default), double_click, right_click, type (text into a field), key (SendKeys syntax: {ENTER}, ^s, %{F4}), close." } } },
+                    { "target", Str("Visible text of the button, menu item, tab or field (from the element list). For 'type' — the field to click first (optional).") },
+                    { "x", new Dictionary<string, object> { { "type", "integer" }, { "description", "Instead of target: X in pixels on the last screenshot." } } },
+                    { "y", new Dictionary<string, object> { { "type", "integer" }, { "description", "Instead of target: Y in pixels on the last screenshot." } } },
+                    { "text", Str("Text to type (for 'type') or keys (for 'key').") } }, "title"),
         };
 
         static string Arg(Dictionary<string, object> a, string key)
@@ -175,6 +186,15 @@ namespace OpenForge
                 case "screenshot_page": return "Робить скріншот " + Arg(a, "target");
                 case "start_program": return "Запускає програму: " + Arg(a, "command");
                 case "screenshot_window": return "Фотографує вікно «" + Arg(a, "title") + "»";
+                case "window_action":
+                    {
+                        string act = Arg(a, "action"), t = Arg(a, "target"), w = " у вікні «" + Arg(a, "title") + "»";
+                        if (act == "close") return "Закриває вікно «" + Arg(a, "title") + "»";
+                        if (act == "key") return "Натискає " + (Arg(a, "text").Length > 0 ? Arg(a, "text") : t) + w;
+                        if (act == "type") return "Вводить «" + Arg(a, "text") + "»" + (t.Length > 0 ? " у «" + t + "»" : "") + w;
+                        return (act == "double_click" ? "Двічі клікає " : act == "right_click" ? "Клікає правою " : "Натискає ") +
+                               (t.Length > 0 ? "«" + t + "»" : "точку " + Arg(a, "x") + "," + Arg(a, "y")) + w;
+                    }
             }
             return name;
         }
@@ -192,7 +212,7 @@ namespace OpenForge
                             string content = Arg(a, "content");
                             File.WriteAllText(p, content, new UTF8Encoding(false));
                             Changed.Add(Arg(a, "path"));
-                            result = "створено (" + Encoding.UTF8.GetByteCount(content) + " байт)";
+                            result = "створено (" + Encoding.UTF8.GetByteCount(content) + " байт)" + CheckStubs(Arg(a, "path"), content);
                             return true;
                         }
                     case "read_file":
@@ -222,17 +242,22 @@ namespace OpenForge
                     case "run_command": return RunCommand(Arg(a, "command"), out result);
                     case "screenshot_page": return ShotPage(Arg(a, "target"), Arg(a, "width"), out result);
                     case "screenshot_window": return ShotWindow(Arg(a, "title"), out result);
+                    case "window_action": return WindowAction(a, out result);
                     case "start_program":
                         {
                             var psi = new ProcessStartInfo("cmd.exe", "/d /c \"" + Arg(a, "command") + "\"");
                             psi.WorkingDirectory = root;
                             psi.UseShellExecute = false;
                             psi.CreateNoWindow = true;
+                            var before = new HashSet<IntPtr>();
+                            foreach (var tw in TopWindows()) before.Add(tw.H);
                             var sp = Process.Start(psi);
                             started.Add(sp);
-                            Thread.Sleep(2500);   // дати програмі відкрити вікно / серверу піднятися
-                            result = sp.HasExited ? "програма вже завершилась (код " + sp.ExitCode + ")" : "запущено (працює у фоні)";
-                            return !sp.HasExited || sp.ExitCode == 0;
+                            Thread.Sleep(1500);   // дати програмі відкрити вікно / серверу піднятися
+                            bool exited = sp.HasExited && sp.ExitCode != 0;
+                            string win = exited ? "" : AutoShotAfterStart(before);
+                            result = sp.HasExited ? "програма вже завершилась (код " + sp.ExitCode + ")" + win : "запущено (працює у фоні)" + win;
+                            return !exited;
                         }
                     case "delete_file":
                         File.Delete(SafePath(Arg(a, "path")));
@@ -438,29 +463,10 @@ namespace OpenForge
 
         bool ShotWindow(string title, out string result)
         {
-            Process found = null;
-            foreach (var p in Process.GetProcesses())
-            {
-                try
-                {
-                    if (p.MainWindowHandle != IntPtr.Zero && p.MainWindowTitle.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0) { found = p; break; }
-                }
-                catch { }
-            }
-            if (found == null) { result = "вікно з назвою «" + title + "» не знайдено"; return false; }
-            RECT r;
-            if (!GetWindowRect(found.MainWindowHandle, out r) || r.R - r.L < 10 || r.B - r.T < 10) { result = "вікно згорнуте або порожнє"; return false; }
-            using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T))
-            {
-                using (var g = System.Drawing.Graphics.FromImage(bmp))
-                {
-                    IntPtr hdc = g.GetHdc();
-                    try { PrintWindow(found.MainWindowHandle, hdc, 2); }   // 2 — PW_RENDERFULLCONTENT: працює й для сучасних вікон
-                    finally { g.ReleaseHdc(hdc); }
-                }
-                AddShot(Pictures.Encode(bmp));
-            }
-            result = "знімок вікна «" + found.MainWindowTitle + "» зроблено й показано користувачу" + (ModelSeesImages ? "; зображення надіслано тобі наступним повідомленням" : "");
+            var w = FindWin(title);
+            if (w == null) { result = "вікно з назвою «" + title + "» не знайдено. Відкриті вікна програм агента: " + MyTitles(); return false; }
+            if (!ShotHwnd(w)) { result = "вікно згорнуте або порожнє"; return false; }
+            result = "знімок вікна «" + w.Title + "» зроблено й показано користувачу." + ShotNote() + Elements(w);
             return true;
         }
 
@@ -549,12 +555,14 @@ namespace OpenForge
             try
             {
                 Directory.CreateDirectory(root);
+                RememberUserWindows();
                 string system = "You are a coding agent working on the user's Windows computer inside ONE project folder. " +
                     "Use the tools to actually create and edit files and run commands — do not just print code. " +
                     "Paths are relative to the project folder. Work step by step, check results, and when the task is finished " +
                     "reply with a short summary of what you did, in the user's language.\n" +
                     "After you build or change a web page, call screenshot_page to check how it looks" + (ModelSeesImages ? " and fix what looks wrong" : "") + ". " +
                     "For a desktop app, use start_program and then screenshot_window.\nProject folder: " + root;
+                system += FullProjectRules;
                 if (!string.IsNullOrEmpty(instruction) && instruction.Trim().Length > 0) system += "\n\nUser instruction: " + instruction;
                 var messages = new List<object> { new Dictionary<string, object> { { "role", "system" }, { "content", system } } };
                 foreach (var t in history) messages.Add(t.ToJson());
@@ -570,7 +578,16 @@ namespace OpenForge
                     // Текст моделі вже показано потоком у Ask.
 
                     var calls = msg.ContainsKey("tool_calls") ? msg["tool_calls"] as object[] : null;
-                    if (calls == null || calls.Length == 0) return;
+                    if (calls == null || calls.Length == 0)
+                    {
+                        // Перш ніж здати роботу: заглушки замість коду чи неперевірений проєкт — повернути модель до роботи (по одному разу).
+                        string note;
+                        string more = BeforeFinish(out note);
+                        if (more == null || step >= MaxSteps - 2) return;
+                        Write("\n\n↻ " + note + "\n");
+                        messages.Add(new Turn("user", more).ToJson());
+                        continue;
+                    }
                     foreach (object co in calls)
                     {
                         if (cancel) return;
@@ -596,6 +613,7 @@ namespace OpenForge
                         if (first.Length > 140) first = first.Substring(0, 140) + "…";
                         Write(ok ? "  ✓" + (name == "run_command" ? "  " + first : "") : "  ✗ " + first);
                         AddDetail(name, args, ok, result);
+                        NoteTool(name, ok);
                         messages.Add(new Dictionary<string, object> { { "role", "tool" }, { "content", result }, { "tool_name", name } });
                         if (pendingShot != null && ModelSeesImages)   // показати моделі, що вийшло
                             messages.Add(new Turn("user", "Ось скріншот результату (" + title + "). Перевір, чи все виглядає правильно.") { Images = new List<string> { pendingShot } }.ToJson());
