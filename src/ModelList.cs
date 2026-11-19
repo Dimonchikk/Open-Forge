@@ -106,9 +106,10 @@ namespace OpenForge
             int bx = left + nameW + Ui.S(10), by = r.Y + Ui.S(14);
             var badges = new List<KeyValuePair<string, Color>>();
             if (m.Uncensored) badges.Add(new KeyValuePair<string, Color>("Без цензури", Ui.Purple));
-            if (m.Vision) badges.Add(new KeyValuePair<string, Color>("Розуміє картинки", Ui.Blue));
+            if (m.Vision && m.Coder) badges.Add(new KeyValuePair<string, Color>("Код + картинки", Ui.Orange));
+            else if (m.Vision) badges.Add(new KeyValuePair<string, Color>("Розуміє картинки", Ui.Blue));
             if (m.Thinks) badges.Add(new KeyValuePair<string, Color>("Міркує", Ui.Ink2));
-            if (m.Category == "code") badges.Add(new KeyValuePair<string, Color>("Код", Ui.Orange));
+            if (m.Coder && !m.Vision) badges.Add(new KeyValuePair<string, Color>("Код", Ui.Orange));
             foreach (var b in badges)
             {
                 int w = TextRenderer.MeasureText(b.Key, Ui.Caps, Size.Empty, TextFormatFlags.NoPadding).Width + Ui.S(14);

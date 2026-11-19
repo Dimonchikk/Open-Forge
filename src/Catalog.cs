@@ -20,6 +20,8 @@ namespace OpenForge
 
         public bool Vision { get { return Tags.Contains("зір"); } }
         public bool Thinks { get { return Tags.Contains("думає"); } }
+        // Сильна в коді: розділ «Код» або позначка «код» (чат-моделі, що добре програмують).
+        public bool Coder { get { return Category == "code" || Tags.Contains("код"); } }
 
         // Як модель піде на цьому ПК:
         // Fast — повністю влазить у відеопам'ять (повна швидкість);
@@ -49,22 +51,22 @@ namespace OpenForge
         public static readonly List<CatalogModel> All = new List<CatalogModel>
         {
             M("qwen3:8b", "Qwen 3 8B", "chat", 5.2f, "Сильна мультимовна модель, добре знає українську. Вміє «подумати» перед відповіддю.", false, false, "думає,інструменти"),
-            M("qwen3.5:9b", "Qwen 3.5 9B", "chat", 7.6f, "Нове покоління Qwen: розуміє картинки, думає, працює з інструментами.", false, false, "думає,зір,інструменти"),
+            M("qwen3.5:9b", "Qwen 3.5 9B", "chat", 7.6f, "Нове покоління Qwen: розуміє картинки, думає, працює з інструментами.", false, false, "думає,зір,інструменти,код"),
             M("llama3.1:8b", "Llama 3.1 8B", "chat", 4.9f, "Класика від Meta. Надійна для щоденних питань і текстів.", false, false, "інструменти"),
-            M("gemma4:12b", "Gemma 4 12B", "chat", 8.0f, "Свіжа модель Google: міркування, код, картинки. Дуже якісні відповіді.", false, false, "думає,зір,інструменти"),
+            M("gemma4:12b", "Gemma 4 12B", "chat", 8.0f, "Свіжа модель Google: міркування, код, картинки. Дуже якісні відповіді.", false, false, "думає,зір,інструменти,код"),
             M("gemma4:e4b", "Gemma 4 E4B", "chat", 9.5f, "Компактна Gemma 4 з підтримкою зображень і аудіо.", false, false, "зір,аудіо"),
             M("gemma3:12b", "Gemma 3 12B", "chat", 8.2f, "Попереднє покоління Gemma — розумна й стабільна, розуміє картинки.", false, false, "зір"),
             M("qwen3:14b", "Qwen 3 14B", "chat", 9.3f, "Старша Qwen 3: помітно розумніша за 8B, але потребує більше пам'яті.", false, false, "думає,інструменти"),
-            M("gpt-oss:20b", "GPT-OSS 20B", "chat", 14.0f, "Відкрита модель від OpenAI. MoE — працює швидше, ніж очікуєш від 20B.", false, true, "думає,інструменти"),
-            M("mistral-small3.2:24b", "Mistral Small 3.2 24B", "chat", 15.0f, "Європейська модель Mistral: чітко виконує інструкції, розуміє картинки.", false, false, "зір,інструменти"),
-            M("qwen3.6:35b", "Qwen 3.6 35B", "chat", 23.0f, "Флагман Qwen для агентів і коду. MoE — активна лише мала частина параметрів.", false, true, "думає,зір,інструменти"),
+            M("gpt-oss:20b", "GPT-OSS 20B", "chat", 14.0f, "Відкрита модель від OpenAI. MoE — працює швидше, ніж очікуєш від 20B.", false, true, "думає,інструменти,код"),
+            M("mistral-small3.2:24b", "Mistral Small 3.2 24B", "chat", 15.0f, "Європейська модель Mistral: чітко виконує інструкції, розуміє картинки.", false, false, "зір,інструменти,код"),
+            M("qwen3.6:35b", "Qwen 3.6 35B", "chat", 23.0f, "Флагман Qwen для агентів і коду. MoE — активна лише мала частина параметрів.", false, true, "думає,зір,інструменти,код"),
             M("dolphin3:8b", "Dolphin 3.0 8B", "chat", 4.9f, "Llama 3.1 без цензури від Cognitive Computations. Слухняна і пряма.", true, false, ""),
             M("huihui_ai/qwen3-abliterated:8b", "Qwen 3 8B Abliterated", "chat", 5.0f, "Qwen 3 з вимкненими відмовами. Найкращий баланс розуму й розміру.", true, false, "думає"),
-            M("huihui_ai/qwen3.5-abliterated:9b", "Qwen 3.5 9B Abliterated", "chat", 6.6f, "Нова Qwen 3.5 без обмежень, з розумінням зображень.", true, false, "думає,зір"),
-            M("huihui_ai/gemma-4-abliterated:12b", "Gemma 4 12B Abliterated", "chat", 7.6f, "Gemma 4 без цензури — найпопулярніша abliterated-модель.", true, false, "думає,зір"),
+            M("huihui_ai/qwen3.5-abliterated:9b", "Qwen 3.5 9B Abliterated", "chat", 6.6f, "Нова Qwen 3.5 без обмежень, з розумінням зображень.", true, false, "думає,зір,код"),
+            M("huihui_ai/gemma-4-abliterated:12b", "Gemma 4 12B Abliterated", "chat", 7.6f, "Gemma 4 без цензури — найпопулярніша abliterated-модель.", true, false, "думає,зір,код"),
             M("huihui_ai/qwen3-abliterated:14b", "Qwen 3 14B Abliterated", "chat", 9.0f, "Старша Qwen 3 без обмежень.", true, false, "думає"),
-            M("huihui_ai/gpt-oss-abliterated:20b", "GPT-OSS 20B Abliterated", "chat", 14.0f, "Модель OpenAI без вбудованих відмов. MoE.", true, true, "думає"),
-            M("huihui_ai/Qwen3.6-abliterated:35b", "Qwen 3.6 35B Abliterated", "chat", 24.0f, "Флагман Qwen 3.6 без цензури. MoE.", true, true, "думає"),
+            M("huihui_ai/gpt-oss-abliterated:20b", "GPT-OSS 20B Abliterated", "chat", 14.0f, "Модель OpenAI без вбудованих відмов. MoE.", true, true, "думає,код"),
+            M("huihui_ai/Qwen3.6-abliterated:35b", "Qwen 3.6 35B Abliterated", "chat", 24.0f, "Флагман Qwen 3.6 без цензури. MoE.", true, true, "думає,код"),
             M("dolphin-llama3:8b", "Dolphin Llama 3 8B", "chat", 4.7f, "Перевірена часом Dolphin на Llama 3.", true, false, ""),
             M("dolphin-mistral:7b", "Dolphin Mistral 7B", "chat", 4.1f, "Легка Dolphin на базі Mistral 7B.", true, false, ""),
             M("llama2-uncensored:7b", "Llama 2 Uncensored 7B", "chat", 3.8f, "Стара, але відома модель без цензури.", true, false, ""),

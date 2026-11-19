@@ -101,7 +101,7 @@ namespace OpenForge
             switch (p)
             {
                 case 1: list = list.Where(m => m.Category == "chat"); break;
-                case 2: list = list.Where(m => m.Category == "code"); break;
+                case 2: list = list.Where(m => m.Coder); break;
                 case 3: list = list.Where(m => m.Vision); break;
                 case 4: list = list.Where(m => m.Category == "reasoning"); break;
                 case 5: list = list.Where(m => m.Category == "translation"); break;
