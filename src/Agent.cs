@@ -424,7 +424,10 @@ namespace OpenForge
             r.Proxy = null;
             r.ContentType = "application/json";
             r.ContentLength = data.Length;
-            r.Timeout = r.ReadWriteTimeout = 15 * 60 * 1000;
+            // Велика модель, що частково в RAM, може довго «читати» розмову перед першим словом — чекаємо до 60 хв;
+            // далі слова йдуть потоком, і між ними — до 30 хв.
+            r.Timeout = 60 * 60 * 1000;
+            r.ReadWriteTimeout = 30 * 60 * 1000;
             req = r;
             using (var rs = r.GetRequestStream()) rs.Write(data, 0, data.Length);
             try

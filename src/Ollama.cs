@@ -138,6 +138,10 @@ namespace OpenForge
                 return "Модель не знайдено в Ollama — можливо, її видалили. Обери іншу або завантаж знову в розділі «Моделі».";
             if (err.IndexOf("memory", StringComparison.OrdinalIgnoreCase) >= 0 && err.IndexOf("requires more", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "Моделі не вистачає пам'яті. Зменш «Пам'ять розмови» в «Налаштуваннях» або обери меншу модель.\n(" + err + ")";
+            if (err.IndexOf("timed out", StringComparison.OrdinalIgnoreCase) >= 0 || err.IndexOf("timeout", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Модель надто довго не відповідала, і запит обірвався. Найчастіше це означає, що модель завелика для цього ПК " +
+                       "(частина її в оперативній пам'яті, і вона рахує дуже повільно). Обери модель з позначкою «Швидко» або «Нормально (MoE)» " +
+                       "у «Налаштування → Моделі», або зменш «Пам'ять розмови».";
             if (err.IndexOf("image", StringComparison.OrdinalIgnoreCase) >= 0 && (err.IndexOf("support", StringComparison.OrdinalIgnoreCase) >= 0 || err.IndexOf("vision", StringComparison.OrdinalIgnoreCase) >= 0))
                 return "Ця модель не бачить картинок, а в розмові є картинка (можливо, в одному з попередніх повідомлень). " +
                        "Обери модель з позначкою «Розуміє картинки» або почни новий чат.\n(Ollama: " + err + ")";
@@ -233,7 +237,8 @@ namespace OpenForge
                 byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
 
                 // Перша відповідь може йти довго (модель вантажиться у відеопам'ять), тож таймаут великий.
-                var req = Request("/api/chat", "POST", 10 * 60 * 1000);
+                var req = Request("/api/chat", "POST", 30 * 60 * 1000);
+                req.Timeout = 60 * 60 * 1000;   // до першого слова: завантаження великої моделі й «читання» довгої розмови
                 req.ContentType = "application/json";
                 req.ContentLength = data.Length;
                 stream.Attach(req);
@@ -366,7 +371,7 @@ namespace OpenForge
                 return "Ollama відповіла помилкою " + (int)resp.StatusCode + ".";
             }
             if (ex.Status == WebExceptionStatus.ConnectFailure) return "Ollama не запущена. Запусти її й спробуй ще раз.";
-            if (ex.Status == WebExceptionStatus.Timeout) return "Модель надто довго не відповідала.";
+            if (ex.Status == WebExceptionStatus.Timeout) return Friendly("timed out");
             return ex.Message;
         }
     }
