@@ -25,26 +25,29 @@ namespace OpenForge
 
         Control BuildModels()
         {
+            // Фільтри й пошук — нерухома шапка; прокручується лише список моделей під нею.
+            var box = new Page();
             modelsHost = new ScrollHost();
             var page = modelsHost.Content;
 
             purposeSeg = new Segmented { Items = Purposes, FitText = true, OnBg = true };
             purposeSeg.Selected = Math.Max(0, Math.Min(Purposes.Length - 1, Settings.GetInt("ModelsPurpose", 0)));
             purposeSeg.ItemClicked += i => { purposeSeg.Selected = i; Settings.SetInt("ModelsPurpose", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
-            page.Controls.Add(purposeSeg);
+            box.Controls.Add(purposeSeg);
 
             censorSeg = new Segmented { Items = Censors, OnBg = true };
             censorSeg.Selected = Math.Max(0, Math.Min(2, Settings.GetInt("ModelsCensor", 0)));
             censorSeg.ItemClicked += i => { censorSeg.Selected = i; Settings.SetInt("ModelsCensor", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
-            page.Controls.Add(censorSeg);
+            box.Controls.Add(censorSeg);
 
             modelSearch = new InputBox { Around = () => Ui.Bg };
             modelSearch.Box.Hint = "Пошук: qwen, кодер, переклад…";
             modelSearch.Box.TextChanged += (s, e) => { RefreshModelsPage(); modelsHost.ScrollTo(0); };
-            page.Controls.Add(modelSearch);
+            box.Controls.Add(modelSearch);
 
-            modelsInfo = Ui.MakeLabel(page, "", Rectangle.Empty, Ui.Small, Ui.CInk2, Ui.CBg);
+            modelsInfo = Ui.MakeLabel(box, "", Rectangle.Empty, Ui.Small, Ui.CInk2, Ui.CBg);
             modelsInfo.AutoEllipsis = true;
+            box.Controls.Add(modelsHost);
 
             modelList = new ModelList();
             modelList.JobOf = id => { PullJob j; return pulls.TryGetValue(id, out j) ? j : null; };
@@ -54,21 +57,29 @@ namespace OpenForge
 
             pullTimer.Tick += (s, e) => PumpPulls();
 
-            modelsHost.Arrange += () =>
+            box.Resize += (s, e) =>
             {
-                int x = Ui.S(32), w = Math.Max(Ui.S(300), Math.Min(modelsHost.Width - Ui.S(64), Ui.S(920))), y = Ui.S(4);
-                purposeSeg.Bounds = new Rectangle(x, y, w, Ui.S(32));
+                int x = Ui.S(32), w = ModelsWidth(box.Width), y = Ui.S(4);
+                purposeSeg.Bounds = new Rectangle(x, y, Math.Min(w, Ui.S(920)), Ui.S(32));
                 y += Ui.S(44);
                 int cw = Math.Min(Ui.S(340), w / 2);
                 censorSeg.Bounds = new Rectangle(x, y, cw, Ui.S(32));
-                modelSearch.Bounds = new Rectangle(x + cw + Ui.S(12), y - Ui.S(2), w - cw - Ui.S(12), Ui.S(36));
+                modelSearch.Bounds = new Rectangle(x + cw + Ui.S(12), y - Ui.S(2), Math.Min(w - cw - Ui.S(12), Ui.S(560)), Ui.S(36));
                 y += Ui.S(46);
                 modelsInfo.Bounds = new Rectangle(x + Ui.S(4), y, w, Ui.S(18));
-                y += Ui.S(30);
-                modelList.Bounds = new Rectangle(x, y, w, modelList.Wanted);
+                y += Ui.S(28);
+                modelsHost.Bounds = new Rectangle(0, y, box.Width, Math.Max(0, box.Height - y));
             };
-            return modelsHost;
+            modelsHost.Arrange += () =>
+            {
+                int w = ModelsWidth(modelsHost.Width);
+                modelList.Columns = w >= Ui.S(1120) ? 2 : 1;   // на широкому вікні — дві колонки карток
+                modelList.Bounds = new Rectangle(Ui.S(32), Ui.S(4), w, modelList.Wanted);
+            };
+            return box;
         }
+
+        static int ModelsWidth(int total) { return Math.Max(Ui.S(300), Math.Min(total - Ui.S(64), Ui.S(1560))); }
 
         void DetectHardware()
         {

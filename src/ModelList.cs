@@ -23,9 +23,15 @@ namespace OpenForge
         int RowH { get { return Ui.S(98); } }
         int Gap { get { return Ui.S(10); } }
 
-        public int Wanted { get { return Items.Count == 0 ? Ui.S(90) : Items.Count * (RowH + Gap); } }
+        public int Columns = 1;
 
-        Rectangle Row(int i) { return new Rectangle(0, i * (RowH + Gap), Width - 1, RowH); }
+        public int Wanted { get { return Items.Count == 0 ? Ui.S(90) : (Items.Count + Columns - 1) / Columns * (RowH + Gap); } }
+
+        Rectangle Row(int i)
+        {
+            int cw = (Width - 1 - (Columns - 1) * Gap) / Columns;
+            return new Rectangle((i % Columns) * (cw + Gap), (i / Columns) * (RowH + Gap), cw, RowH);
+        }
 
         // Кнопки праворуч у картці: (дія, підпис, синя?).
         List<Tuple<string, string, bool>> Buttons(CatalogModel m)
@@ -179,10 +185,11 @@ namespace OpenForge
             model = null;
             action = null;
             if (p.Y < 0) return false;
-            int i = p.Y / (RowH + Gap);
-            if (i < 0 || i >= Items.Count) return false;
+            int row = p.Y / (RowH + Gap), i = -1;
+            for (int c = 0; c < Columns; c++)
+                if (row * Columns + c < Items.Count && Row(row * Columns + c).Contains(p)) i = row * Columns + c;
+            if (i < 0) return false;
             var r = Row(i);
-            if (!r.Contains(p)) return false;
             model = Items[i];
             foreach (var kv in ButtonRects(model, r))
                 if (kv.Value.Contains(p)) { action = kv.Key; return true; }
