@@ -12,8 +12,8 @@ namespace OpenForge
     partial class MainForm : Form
     {
         const int SideW = 236, HeaderH = 88;
-        static readonly string[] Titles = { "Чат", "Моделі", "Порівняння", "Налаштування" };
-        static readonly string[] IconKeys = { "chat", "models", "compare", "settings" };
+        static readonly string[] Titles = { "Чат", "Налаштування", "Налаштування", "Налаштування" };
+        static readonly string[] Tabs = { "Моделі", "Порівняння", "Загальні" };
         static readonly string[] Subtitles =
         {
             "Розмова з моделлю, що працює прямо на твоєму ПК",
@@ -26,6 +26,7 @@ namespace OpenForge
         readonly Label lblTitle, lblSub;
         readonly ThemeSwitch theme = new ThemeSwitch();
         readonly StatusPill status = new StatusPill();
+        readonly Segmented settingsTabs = new Segmented { Items = Tabs, OnBg = true };
         readonly Control[] pages = new Control[4];
         int current = -1;
 
@@ -54,9 +55,13 @@ namespace OpenForge
             KeyPreview = true;
             try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
 
-            sidebar.Items = Titles;
-            sidebar.IconKeys = IconKeys;
-            sidebar.ItemClicked += ShowPage;
+            sidebar.ItemClicked += i =>
+            {
+                if (i == 0) { ShowPage(0); NewChat(); }
+                else ShowPage(Math.Max(1, Math.Min(3, Settings.GetInt("SettingsTab", 1))));
+            };
+            settingsTabs.ItemClicked += i => ShowPage(i + 1);
+            Controls.Add(settingsTabs);
             sidebar.UpdateClicked += () => Program.Open(Updates.Download);
             Controls.Add(sidebar);
 
@@ -138,8 +143,11 @@ namespace OpenForge
         {
             if (i == current) return;
             current = i;
-            sidebar.Selected = i;
+            sidebar.Selected = i == 0 ? (chatId == null ? 0 : -1) : 1;
             Settings.SetInt("Page", i);
+            if (i >= 1) { Settings.SetInt("SettingsTab", i); settingsTabs.Selected = i - 1; }
+            settingsTabs.Visible = i >= 1;
+            OnResize(EventArgs.Empty);
             lblTitle.Text = Titles[i];
             lblSub.Text = Subtitles[i];
             for (int k = 0; k < pages.Length; k++) pages[k].Visible = k == i;
@@ -160,7 +168,11 @@ namespace OpenForge
             lblTitle.Bounds = new Rectangle(x - Ui.S(3), Ui.S(22), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(36));
             lblSub.Bounds = new Rectangle(x - Ui.S(1), Ui.S(56), Math.Max(10, status.Left - x - Ui.S(10)), Ui.S(20));   // не налазить на пігулку стану
             var area = new Rectangle(side, Ui.S(HeaderH), w - side, Math.Max(0, h - Ui.S(HeaderH)));
-            foreach (var p in pages) p.Bounds = area;
+            pages[0].Bounds = area;
+            // Вкладки «Моделі / Порівняння / Загальні» під заголовком «Налаштування».
+            settingsTabs.Bounds = new Rectangle(x - Ui.S(2), Ui.S(HeaderH) + Ui.S(2), Math.Min(Ui.S(420), w - x - Ui.S(28)), Ui.S(32));
+            var sub = new Rectangle(side, settingsTabs.Bottom + Ui.S(14), w - side, Math.Max(0, h - settingsTabs.Bottom - Ui.S(14)));
+            for (int k = 1; k < pages.Length; k++) pages[k].Bounds = sub;
         }
 
         // ── тема ────────────────────────────────────────────────────────────────

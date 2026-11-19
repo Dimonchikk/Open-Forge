@@ -22,7 +22,7 @@ try {
     if (!(Test-Path $csc)) { throw 'Не знайдено компілятор .NET Framework 4 (csc.exe).' }
     $cargs = @('/nologo', '/target:winexe', '/optimize+', '/codepage:65001', '/utf8output', '/win32icon:app.ico', '/out:OpenForge.exe',
         '/r:System.dll', '/r:System.Core.dll', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.Management.dll',
-        '/r:System.Web.Extensions.dll')
+        '/r:System.Web.Extensions.dll', '/r:System.IO.Compression.dll', '/r:System.IO.Compression.FileSystem.dll')
     $cargs += @(Get-ChildItem $root -Filter *.cs | ForEach-Object { $_.Name })
     Say 'Збираю OpenForge.exe...'
     $ErrorActionPreference = 'Continue'

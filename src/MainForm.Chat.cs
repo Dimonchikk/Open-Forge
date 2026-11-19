@@ -14,8 +14,11 @@ namespace OpenForge
         UiControl chatPage;
         MessageList chatList;
         InputBox chatInput;
-        PillBtn modelBtn, newChatBtn;
+        PillBtn modelBtn;
         RoundBtn sendBtn, folderBtn, agentOffBtn;
+        HistoryList historyList;
+        string chatId, chatTitle;   // поточний чат в історії (null — ще не збережений)
+        readonly System.Windows.Forms.Timer speakTimer = new System.Windows.Forms.Timer { Interval = 250 };
         PillBtn agentChip;
         string model;
 
@@ -36,14 +39,25 @@ namespace OpenForge
 
             chatList = new MessageList();
             chatPage.Controls.Add(chatList);
+            chatList.Speak += SpeakMessage;
+
+            historyList = new HistoryList();
+            historyList.Open += id => { ShowPage(0); OpenChat(id); };
+            historyList.Rename += RenameChat;
+            historyList.Delete += DeleteChat;
+            historyList.SetItems(ChatStore.All());
+            sidebar.List = historyList;   // список чатів — у боковому меню під «Новим чатом»
+            speakTimer.Tick += (s, e) =>
+            {
+                chatList.Invalidate();
+                foreach (var c in cards) c.List.Invalidate();
+                if (Speaker.Current == null) speakTimer.Stop();
+            };
 
             modelBtn = new PillBtn { Icon = "models", OnBg = true, Text = "Модель" };
             modelBtn.Click += (s, e) => ShowModelMenu();
             chatPage.Controls.Add(modelBtn);
 
-            newChatBtn = new PillBtn { Icon = "new", OnBg = true, Text = "Новий чат" };
-            newChatBtn.Click += (s, e) => NewChat();
-            chatPage.Controls.Add(newChatBtn);
 
             chatInput = new InputBox { Multiline = true, MaxLines = 8 };
             chatInput.Box.Hint = "Напиши повідомлення…";
@@ -85,9 +99,7 @@ namespace OpenForge
             int w = chatPage.Width, h = chatPage.Height;
             int col = Math.Min(Ui.S(780), w - Ui.S(48));
             int x = (w - col) / 2;
-
             modelBtn.Bounds = new Rectangle(x, Ui.S(2), Math.Min(Ui.S(320), modelBtn.Natural()), Ui.S(32));
-            newChatBtn.Bounds = new Rectangle(x + col - newChatBtn.Natural(), Ui.S(2), newChatBtn.Natural(), Ui.S(32));
 
             int ih = chatInput.Wanted;
             chatInput.Bounds = new Rectangle(x, h - ih - Ui.S(20), col, ih);
@@ -231,8 +243,93 @@ namespace OpenForge
             if (stream != null) stream.Cancel();
             if (agent != null) agent.Cancel();
             FinishIfDone(true);
+            Speaker.Stop();
             chatList.Clear();
+            chatId = chatTitle = null;
+            historyList.Selected = null;
+            historyList.Invalidate();
+            if (current == 0) sidebar.Selected = 0;
             chatInput.Box.Focus();
+        }
+
+        // ── історія ─────────────────────────────────────────────────────────────
+
+        void SaveChat()
+        {
+            if (chatId == null) return;
+            ChatStore.Save(chatId, chatTitle, chatList.Items);
+            historyList.Selected = chatId;
+            historyList.SetItems(ChatStore.All());
+            if (current == 0) sidebar.Selected = -1;
+        }
+
+        void OpenChat(string id)
+        {
+            if (Busy || id == chatId) return;
+            Speaker.Stop();
+            string title;
+            var msgs = ChatStore.Load(id, out title);
+            chatList.Clear();
+            foreach (var m in msgs) chatList.Items.Add(m);
+            chatList.Changed(null);
+            chatList.ScrollToEnd();
+            chatId = id;
+            chatTitle = title;
+            historyList.Selected = id;
+            historyList.Invalidate();
+            sidebar.Selected = -1;
+            UpdateChatEmpty();
+            chatInput.Box.Focus();
+        }
+
+        void RenameChat(string id)
+        {
+            var e = ChatStore.All().Find(c => c.Id == id);
+            if (e == null) return;
+            using (var d = new TextPrompt("Перейменувати чат", "Нова назва чату", e.Title))
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                ChatStore.Rename(id, d.Value);
+                if (id == chatId) chatTitle = d.Value;
+            }
+            historyList.SetItems(ChatStore.All());
+        }
+
+        void DeleteChat(string id)
+        {
+            var e = ChatStore.All().Find(c => c.Id == id);
+            if (e == null) return;
+            if (MessageBox.Show(this, "Видалити чат «" + e.Title + "»? Його не можна буде відновити.", "Open Forge",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            if (id == chatId) { if (Busy) return; NewChat(); }
+            ChatStore.Delete(id);
+            historyList.SetItems(ChatStore.All());
+        }
+
+        // ── озвучка ─────────────────────────────────────────────────────────────
+
+        void SpeakMessage(ChatMessage m)
+        {
+            if (Speaker.Current == m) { Speaker.Stop(); chatList.Invalidate(); foreach (var c in cards) c.List.Invalidate(); return; }
+            Speaker.Speak(m, m.Display, AskVoiceDownload, err =>
+            {
+                if (string.IsNullOrEmpty(err)) return;
+                try { BeginInvoke((Action)(() => MessageBox.Show(this, "Не вдалося прочитати текст:\n" + err, "Open Forge"))); } catch { }
+            });
+            speakTimer.Start();
+        }
+
+        // З фонового потоку: спитати, чи завантажити український голос.
+        bool AskVoiceDownload()
+        {
+            try
+            {
+                return (bool)Invoke((Func<bool>)(() => MessageBox.Show(this,
+                    "Щоб читати українською, потрібен голос Piper — безкоштовний, працює без інтернету.\n\n" +
+                    "Завантажити його зараз? Це один раз, близько 100 МБ.", "Український голос",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes));
+            }
+            catch { return false; }
         }
 
         void Send()
@@ -261,6 +358,8 @@ namespace OpenForge
             history.Add(new Turn("user", text));
 
             chatList.Add(new ChatMessage("user", text));
+            if (chatId == null) { chatId = ChatStore.NewId(); chatTitle = ChatStore.TitleFrom(text); }
+            SaveChat();
             answer = new ChatMessage("assistant", "") { Streaming = true, Model = model };
             chatList.Add(answer);
             chatInput.Box.Clear();
@@ -326,6 +425,7 @@ namespace OpenForge
                     : run.Error));
             }
             chatList.Changed(answer);
+            SaveChat();
             SetSending(false);
         }
 
@@ -356,6 +456,7 @@ namespace OpenForge
             }
             if (s.Error != null) chatList.Add(new ChatMessage("error", s.Error));
             chatList.Changed(answer);
+            SaveChat();
             SetSending(false);
         }
 

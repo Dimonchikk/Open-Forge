@@ -177,6 +177,10 @@ namespace OpenForge
             Settings.Frozen = true;
             try { if (Directory.Exists(Settings.Dir)) Directory.Delete(Settings.Dir, true); }
             catch { problems.Add("не вдалося видалити налаштування в " + Settings.Dir); }
+            // Голос для озвучки (Piper), якщо його завантажували.
+            string local = Path.GetDirectoryName(Speaker.VoiceDir);
+            try { Speaker.Stop(); if (Directory.Exists(local)) Directory.Delete(local, true); }
+            catch { problems.Add("не вдалося видалити " + local); }
 
             // Сам файл програми видаляємо після виходу: cmd чекає дві секунди й прибирає папку.
             string dir = Path.GetDirectoryName(Application.ExecutablePath);

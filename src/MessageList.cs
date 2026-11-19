@@ -439,7 +439,7 @@ namespace OpenForge
         {
             var list = new List<KeyValuePair<string, Rectangle>>();
             int x = r.X - Ui.S(4), y = r.Bottom - FootH + Ui.S(4), h = FootH - Ui.S(6);
-            foreach (string key in m.Folder != null ? new[] { "copy", "folder" } : new[] { "copy" })
+            foreach (string key in m.Folder != null ? new[] { "copy", "speak", "folder" } : new[] { "copy", "speak" })
             {
                 int w = TextRenderer.MeasureText(FootLabel(m, key), Ui.Small, Size.Empty, NF).Width + Ui.S(30);
                 list.Add(new KeyValuePair<string, Rectangle>(key, new Rectangle(x, y, w, h)));
@@ -450,6 +450,7 @@ namespace OpenForge
 
         string FootLabel(ChatMessage m, string key)
         {
+            if (key == "speak") return Speaker.Current == m ? (Speaker.Status ?? "Зупинити") : "Слухати";
             return key == "folder" ? "Відкрити папку" : copied == m ? "Скопійовано" : "Копіювати";
         }
 
@@ -532,6 +533,13 @@ namespace OpenForge
                     if (line.Length > 0) TextRenderer.DrawText(g, line, font, new Point(v.X, y), fore, NF);
                 }
             }
+            // М'яке затухання вгорі: прокручений текст не обрізається різко під кнопками.
+            if (offset > 0)
+            {
+                int fh = Ui.S(18);
+                using (var br = new LinearGradientBrush(new Rectangle(0, 0, Width, fh + 1), Back, Color.FromArgb(0, Back), LinearGradientMode.Vertical))
+                    g.FillRectangle(br, 0, 0, Width - Ui.S(12), fh);
+            }
             PaintBar(g);
         }
 
@@ -543,7 +551,8 @@ namespace OpenForge
                 var cr = kv.Value;
                 if (hoverObj == m && hoverKey == kv.Key) Ui.FillRound(g, cr, Ui.S(7), Ui.Fill);
                 float s = Ui.S(13);
-                Icons.Draw(g, kv.Key == "folder" ? "folder" : "copy", new RectangleF(cr.X + Ui.S(7), cr.Y + (cr.Height - s) / 2f, s, s), Ui.Ink2);
+                string ic = kv.Key == "folder" ? "folder" : kv.Key == "speak" ? (Speaker.Current == m ? "stop" : "speaker") : "copy";
+                Icons.Draw(g, ic, new RectangleF(cr.X + Ui.S(7), cr.Y + (cr.Height - s) / 2f, s, s), Ui.Ink2);
                 Ui.Text(g, FootLabel(m, kv.Key), Ui.Small, new Rectangle(cr.X + Ui.S(25), cr.Y, cr.Width - Ui.S(25), cr.Height), Ui.Ink2, Ui.Left);
             }
             var last = links[links.Count - 1].Value;
@@ -754,6 +763,7 @@ namespace OpenForge
         }
 
         public event Action<string> OpenFolder;
+        public event Action<ChatMessage> Speak;
 
         public void Wheel(int delta) { ScrollTo(offset - delta * Ui.S(80) / 120); }
 
@@ -835,6 +845,7 @@ namespace OpenForge
             if (key == "code") CopyToClipboard(((Para)obj).Code, obj);
             else if (key == "copy") CopyToClipboard(((ChatMessage)obj).Display, obj);
             else if (key == "folder" && OpenFolder != null) OpenFolder(((ChatMessage)obj).Folder);
+            else if (key == "speak" && Speak != null) Speak((ChatMessage)obj);
         }
 
         protected override void OnMouseLeave(EventArgs e)

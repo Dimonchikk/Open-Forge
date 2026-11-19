@@ -118,6 +118,15 @@ namespace OpenForge
                             }
                         }
                         break;
+                    case "speaker":   // динамік
+                        g.DrawPolygon(pen, new[] { P(x, y, s, 0.1f, 0.38f), P(x, y, s, 0.3f, 0.38f), P(x, y, s, 0.52f, 0.16f), P(x, y, s, 0.52f, 0.84f), P(x, y, s, 0.3f, 0.62f), P(x, y, s, 0.1f, 0.62f) });
+                        g.DrawArc(pen, x + s * 0.5f, y + s * 0.3f, s * 0.24f, s * 0.4f, -55, 110);
+                        g.DrawArc(pen, x + s * 0.5f, y + s * 0.14f, s * 0.42f, s * 0.72f, -55, 110);
+                        break;
+                    case "history":   // годинник
+                        g.DrawEllipse(pen, x + s * 0.08f, y + s * 0.08f, s * 0.84f, s * 0.84f);
+                        g.DrawLines(pen, new[] { P(x, y, s, 0.5f, 0.24f), P(x, y, s, 0.5f, 0.5f), P(x, y, s, 0.68f, 0.62f) });
+                        break;
                     case "half":
                         g.DrawEllipse(pen, x + s * 0.08f, y + s * 0.08f, s * 0.84f, s * 0.84f);
                         g.FillPie(brush, x + s * 0.08f, y + s * 0.08f, s * 0.84f, s * 0.84f, 90, 180);
@@ -127,26 +136,45 @@ namespace OpenForge
         }
     }
 
-    // Бокове меню: логотип угорі, розділи, внизу — версія й кнопка оновлення.
+    // Бокове меню: логотип, «Новий чат», під ним — список чатів (історія), унизу — «Налаштування»,
+    // версія й кнопка оновлення.
     class Sidebar : UiControl
     {
-        public string[] Items = new string[0], IconKeys = new string[0];
-        int selected, hover = -1;
+        int selected, hover = -1;     // 0 — «Новий чат», 1 — «Налаштування», -1 — нічого
         bool hoverButton;
         string update;
+        Control list;
         public event Action<int> ItemClicked;
         public event Action UpdateClicked;
 
-        public Sidebar() { }
-
         public int Selected { get { return selected; } set { selected = value; Invalidate(); } }
-        public string NewVersion { get { return update; } set { update = value; Invalidate(); } }
+        public string NewVersion { get { return update; } set { update = value; Invalidate(); OnResize(EventArgs.Empty); } }
 
-        const int Top0 = 92, ItemH = 38;
+        // Список чатів між «Новим чатом» і «Налаштуваннями».
+        public Control List
+        {
+            set { list = value; Controls.Add(value); OnResize(EventArgs.Empty); }
+        }
 
-        Rectangle ItemRect(int i) { return new Rectangle(Ui.S(12), Ui.S(Top0 + i * (ItemH + 4)), Width - Ui.S(24), Ui.S(ItemH)); }
+        Rectangle ItemRect(int i)
+        {
+            int y = i == 0 ? Ui.S(84) : Height - Ui.S(update != null ? 132 : 84);
+            return new Rectangle(Ui.S(12), y, Width - Ui.S(24), Ui.S(38));
+        }
+
         Rectangle ButtonRect { get { return new Rectangle(Ui.S(14), Height - Ui.S(52), Width - Ui.S(28), Ui.S(36)); } }
-        bool ShowButton { get { return update != null && ButtonRect.Y > ItemRect(Items.Length).Y; } }
+        bool ShowButton { get { return update != null; } }
+        int ListTop { get { return Ui.S(150); } }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (list != null) list.Bounds = new Rectangle(Ui.S(4), ListTop, Width - Ui.S(6), Math.Max(0, ItemRect(1).Y - Ui.S(8) - ListTop));
+            Invalidate();
+        }
+
+        static readonly string[] Labels = { "Новий чат", "Налаштування" };
+        static readonly string[] Keys = { "new", "settings" };
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -161,17 +189,19 @@ namespace OpenForge
             Ui.Text(g, "Open Forge", Ui.Brand, new Rectangle(Ui.S(60), Ui.S(24), Width - Ui.S(80), Ui.S(22)), Ui.Ink, Ui.Left);
             Ui.Text(g, "Нейромережі на твоєму ПК", Ui.Caps, new Rectangle(Ui.S(60), Ui.S(46), Width - Ui.S(80), Ui.S(16)), Ui.Ink2, Ui.Left);
 
-            for (int i = 0; i < Items.Length; i++)
+            for (int i = 0; i < 2; i++)
             {
                 var r = ItemRect(i);
                 bool sel = i == selected;
                 if (sel) Ui.FillRound(g, r, Ui.S(9), Ui.RowSel);
                 else if (i == hover) Ui.FillRound(g, r, Ui.S(9), Ui.Mix(Ui.Side, Ui.Ink, 0.06f));
-                Color c = sel ? Ui.Blue : Ui.Ink;
                 float s = Ui.S(17);
-                if (i < IconKeys.Length) Icons.Draw(g, IconKeys[i], new RectangleF(r.X + Ui.S(12), r.Y + (r.Height - s) / 2f, s, s), sel ? Ui.Blue : Ui.Ink2);
-                Ui.Text(g, Items[i], sel ? Ui.BodySemi : Ui.Body, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), c, Ui.Left);
+                Icons.Draw(g, Keys[i], new RectangleF(r.X + Ui.S(12), r.Y + (r.Height - s) / 2f, s, s), sel ? Ui.Blue : Ui.Ink2);
+                Ui.Text(g, Labels[i], sel ? Ui.BodySemi : Ui.Body, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), sel ? Ui.Blue : Ui.Ink, Ui.Left);
             }
+            Ui.Text(g, "ЧАТИ", Ui.Caps, new Rectangle(Ui.S(24), Ui.S(130), Width - Ui.S(40), Ui.S(16)), Ui.Ink3, Ui.Left);
+            using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale)))
+                g.DrawLine(pen, Ui.S(16), ItemRect(1).Y - Ui.S(6), Width - Ui.S(16), ItemRect(1).Y - Ui.S(6));
 
             Ui.Text(g, "Версія " + AppVersion.Text + (update != null ? " · є нова " + update : ""), Ui.Caps,
                 new Rectangle(Ui.S(26), Height - Ui.S(update != null ? 80 : 36), Width - Ui.S(38), Ui.S(20)), update != null ? Ui.Blue : Ui.Ink3, Ui.Left);
@@ -185,7 +215,7 @@ namespace OpenForge
 
         int Hit(Point p)
         {
-            for (int i = 0; i < Items.Length; i++) if (ItemRect(i).Contains(p)) return i;
+            for (int i = 0; i < 2; i++) if (ItemRect(i).Contains(p)) return i;
             return -1;
         }
 
