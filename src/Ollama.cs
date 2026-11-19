@@ -139,7 +139,8 @@ namespace OpenForge
             if (err.IndexOf("memory", StringComparison.OrdinalIgnoreCase) >= 0 && err.IndexOf("requires more", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "Моделі не вистачає пам'яті. Зменш «Пам'ять розмови» в «Налаштуваннях» або обери меншу модель.\n(" + err + ")";
             if (err.IndexOf("image", StringComparison.OrdinalIgnoreCase) >= 0 && (err.IndexOf("support", StringComparison.OrdinalIgnoreCase) >= 0 || err.IndexOf("vision", StringComparison.OrdinalIgnoreCase) >= 0))
-                return "Ця модель не бачить картинок. Обери модель з позначкою «Розуміє картинки» (фільтр «Зображення» в «Налаштування → Моделі»).";
+                return "Ця модель не бачить картинок, а в розмові є картинка (можливо, в одному з попередніх повідомлень). " +
+                       "Обери модель з позначкою «Розуміє картинки» або почни новий чат.\n(Ollama: " + err + ")";
             return err;
         }
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };

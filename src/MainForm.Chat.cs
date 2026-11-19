@@ -554,6 +554,15 @@ namespace OpenForge
                 }
                 if (t.Length > 0) history.Insert(0, new Turn(m.Role, t) { Images = m.Role == "user" ? m.Images : null });
             }
+            // Модель точно не бачить картинок (з каталогу) — не шлемо їх зовсім, навіть зі старих повідомлень,
+            // інакше Ollama відмовляє на кожне наступне повідомлення в цьому чаті.
+            if (ModelSeesImages(model) == false)
+                foreach (var t in history)
+                    if (t.Images != null && t.Images.Count > 0)
+                    {
+                        t.Content = "(До цього повідомлення була прикріплена картинка, але поточна модель картинок не бачить.)\n" + t.Content;
+                        t.Images = null;
+                    }
             int left = 4;
             for (int i = history.Count - 1; i >= 0; i--)
             {
@@ -579,7 +588,7 @@ namespace OpenForge
                 string task = history.Count > 0 ? history[history.Count - 1].Content : um.Raw;
                 history.RemoveAt(history.Count - 1);
                 var run = new AgentRun(agentFolder, model, agentPerm, history, Settings.Get("SystemPrompt", ""));
-                run.TaskImages = um.Images;
+                run.TaskImages = ModelSeesImages(model) == false ? null : um.Images;
                 run.ModelSeesImages = ModelSeesImages(model) != false;
                 shotsSeen = 0;
                 run.Confirm = AskAgentPermission;
