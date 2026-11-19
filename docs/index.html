@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Open Forge — локальний AI для Windows</title>
-<meta name="description" content="Запускай локальні моделі ШІ на своєму ПК: швидкий чат і 57 моделей у каталозі — звичайні й без цензури, з підбором під твою відеокарту.">
+<meta name="description" content="Запускай локальні моделі ШІ на своєму ПК: чат, агент, що працює з файлами в папці, порівняння моделей і 57 моделей у каталозі — звичайні й без цензури.">
 <link rel="icon" type="image/png" href="img/icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
@@ -208,9 +208,9 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
 </nav>
 
 <header class="wrap hero">
-  <a class="pill" href="#new">Нове у 2.0: переписано з нуля — швидко, легко, без зависань →</a>
+  <a class="pill" href="#new">Нове у 2.1: агент з папкою, порівняння моделей і блоки коду →</a>
   <h1>Локальний AI.<br><em>Без обмежень.</em></h1>
-  <p class="sub">Запускай і тестуй моделі штучного інтелекту прямо на своєму комп'ютері. Без хмари, без підписок — і з моделями без цензури.</p>
+  <p class="sub">Запускай, тестуй і порівнюй моделі штучного інтелекту прямо на своєму комп'ютері. Без хмари, без підписок — і з моделями без цензури.</p>
   <div class="actions">
     <a class="btn btn-primary dl" href="https://github.com/Dimonchikk/Open-Forge/releases/latest">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
@@ -218,7 +218,7 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
     </a>
     <a class="btn btn-ghost" href="https://github.com/Dimonchikk/Open-Forge" target="_blank" rel="noopener">Вихідний код</a>
   </div>
-  <p class="meta">Версія <span class="ver">2.0</span> · <span class="size">150 КБ</span> · Windows 10 і 11 · безкоштовно</p>
+  <p class="meta">Версія <span class="ver">2.1</span> · <span class="size">170 КБ</span> · Windows 10 і 11 · безкоштовно</p>
 
   <div class="shot">
     <img class="only-light" src="img/chat_light.webp" alt="Чат Open Forge: питання і відповідь моделі Qwen 3 8B" width="1180" height="780">
@@ -235,13 +235,23 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
   <div class="grid">
     <div class="card">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="13" rx="4"/><path d="M8 17l-2.5 3.5L12 17"/></svg></div>
-      <h3>Чат без зависань <span class="new">2.0</span></h3>
-      <p>Відповідь іде наживо, а вікно лишається чуйним навіть на дуже довгих текстах. Прокрутка працює завжди, під відповіддю — швидкість і «Копіювати».</p>
+      <h3>Чат без зависань</h3>
+      <p>Відповідь іде наживо, вікно лишається чуйним навіть на дуже довгих текстах. Текст можна виділяти мишею, код — окремим блоком з кнопкою «Копіювати».</p>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5v8a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/></svg></div>
+      <h3>Агент у твоїй папці <span class="new">2.1</span></h3>
+      <p>Обираєш папку — модель сама створює файли й підпапки з кодом, а за твоїм дозволом запускає команди. За межі папки не вийде.</p>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="16" rx="2"/><rect x="14" y="4" width="7" height="16" rx="2"/></svg></div>
+      <h3>Порівняння моделей <span class="new">2.1</span></h3>
+      <p>Одне питання — до трьох моделей поруч. Видно швидкість, час і токени; найшвидша отримує позначку.</p>
     </div>
     <div class="card">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5l8.5 4.5v10L12 21.5 3.5 17V7z"/><path d="M3.5 7L12 11.5 20.5 7M12 11.5v10"/></svg></div>
       <h3>57 моделей у каталозі</h3>
-      <p>Чат, код, зображення, міркування, переклад, швидкі — звичайні й без цензури. Завантаження в один клік з прогресом.</p>
+      <p>Чат, код, зображення, міркування, переклад — з фільтрами й пошуком. Завантаження в один клік з прогресом.</p>
     </div>
     <div class="card">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l5 5L19 7"/></svg></div>
@@ -249,24 +259,14 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
       <p>Open Forge сам визначає відеокарту й пам'ять і позначає кожну модель: «Швидко на твоєму ПК», «Піде повільніше» або «Замало пам'яті».</p>
     </div>
     <div class="card">
-      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg></div>
-      <h3>Фільтри й пошук <span class="new">2.0</span></h3>
-      <p>«Чат / Код / Зображення / Міркування / Переклад», «З цензурою / Без цензури» і пошук за назвою.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg></div>
-      <h3>Інструкція для моделі</h3>
-      <p>Напиши раз, як модель має відповідати, — і вона діятиме в кожному чаті.</p>
-    </div>
-    <div class="card">
-      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg></div>
-      <h3>Крихітний і швидкий <span class="new">2.0</span></h3>
-      <p>Один файл на 150 КБ, відкривається миттєво. Світла й темна тема — як у Windows.</p>
-    </div>
-    <div class="card">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 7.5-2"/></svg></div>
       <h3>Моделі без цензури</h3>
       <p>Dolphin і abliterated-версії відомих моделей — відповідають прямо, без «я не можу з цим допомогти».</p>
+    </div>
+    <div class="card">
+      <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg></div>
+      <h3>Крихітний і швидкий</h3>
+      <p>Один файл на ~170 КБ, відкривається миттєво. Світла й темна тема — як у Windows.</p>
     </div>
     <div class="card">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4.5h-4.5"/></svg></div>
@@ -279,12 +279,13 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
 <section id="look" class="gallery">
   <p class="label">Як виглядає</p>
   <h2>Чисто, зрозуміло, у світлій і темній темі</h2>
-  <p class="lead">Скріни Open Forge 2.0. Тема підлаштовується під Windows.</p>
+  <p class="lead">Скріни Open Forge 2.1. Тема підлаштовується під Windows.</p>
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" aria-selected="true" data-shot="chat">Чат</button>
+    <button class="tab" role="tab" aria-selected="false" data-shot="agent">Агент</button>
+    <button class="tab" role="tab" aria-selected="false" data-shot="compare">Порівняння</button>
     <button class="tab" role="tab" aria-selected="false" data-shot="models">Моделі</button>
     <button class="tab" role="tab" aria-selected="false" data-shot="settings">Налаштування</button>
-    <button class="tab" role="tab" aria-selected="false" data-shot="chat_empty">Початок</button>
   </div>
   <p class="caption" id="caption"></p>
   <div class="shot">
@@ -312,14 +313,13 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
 
 <section id="new">
   <p class="label">Що нового</p>
-  <h2>Версія 2.0</h2>
+  <h2>Версія 2.1</h2>
   <div class="newbox">
     <ul>
-      <li><span class="dot"></span><span><b>Переписано з нуля.</b> Один файл на 150 КБ замість 17 МБ: відкривається миттєво й нічого не тягне за собою.</span></li>
-      <li><span class="dot"></span><span><b>Чат більше не зависає</b> на довгих відповідях і великих вставках, а прокрутка працює завжди — коліщатком, повзунком і клавішами.</span></li>
-      <li><span class="dot"></span><span><b>Новий каталог моделей</b>: фільтри «Чат / Код / Зображення / Міркування / Переклад» і «З цензурою / Без цензури», пошук, позначка, чи піде модель швидко на твоєму ПК.</span></li>
-      <li><span class="dot"></span><span><b>Поля вводу як належить</b>: видно курсор, Ctrl+A, C, V, X, Z працюють на будь-якій розкладці.</span></li>
-      <li><span class="dot"></span><span><b>Агент, порівняння моделей і встановлення Ollama з програми</b> повернуться в наступних оновленнях 2.x.</span></li>
+      <li><span class="dot"></span><span><b>Агент повернувся.</b> Кнопка з папкою біля поля вводу: обираєш папку й рівень дозволів — модель створює файли й підпапки з кодом і за твоїм дозволом запускає команди.</span></li>
+      <li><span class="dot"></span><span><b>Порівняння моделей</b>: одне питання — до трьох моделей поруч, зі швидкістю, часом і токенами.</span></li>
+      <li><span class="dot"></span><span><b>Блоки коду</b> з кнопкою «Копіювати» і <b>виділення тексту</b> мишею в будь-якій відповіді (Ctrl+C, Ctrl+A).</span></li>
+      <li><span class="dot"></span><span><b>Видалення програми</b> прямо з «Налаштувань», а поле вводу більше не показує зайву смугу прокрутки.</span></li>
     </ul>
     <p class="note"><a href="https://github.com/Dimonchikk/Open-Forge/releases" target="_blank" rel="noopener">Історія всіх версій →</a></p>
   </div>
@@ -333,7 +333,7 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
     <div class="step"><h3>Завантаж Open Forge</h3><p>Запусти інсталятор — програма встановиться для тебе, з ярликами на Робочому столі й у «Пуску». Стару версію 1.x він прибере сам.</p></div>
     <div class="step"><h3>Встанови Ollama</h3><p>Завантаж <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> — рушій моделей — і запусти її. Open Forge сам її знайде: угорі з'явиться зелене «Ollama працює».</p></div>
     <div class="step"><h3>Обери модель</h3><p>У розділі «Моделі» завантаж одну з зеленою позначкою «Швидко на твоєму ПК».</p></div>
-    <div class="step"><h3>Пиши в чат</h3><p>Натисни «У чат» біля моделі — і вона відповідає прямо на твоєму ПК.</p></div>
+    <div class="step"><h3>Пиши в чат</h3><p>Натисни «У чат» біля моделі — і вона відповідає прямо на твоєму ПК. Для роботи з файлами натисни кнопку з папкою.</p></div>
   </div>
 </section>
 
@@ -346,17 +346,17 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
     <details><summary>Який потрібен комп'ютер?</summary><p>Windows 10 або 11 (64-bit) і від 8 ГБ оперативної пам'яті. Відеокарта з 6–8 ГБ пам'яті дуже бажана: тоді моделі 7–9B відповідають швидко. Без відеокарти працюватимуть малі моделі.</p></details>
     <details><summary>Де зберігаються моделі?</summary><p>Там, де їх тримає Ollama (типово — у папці користувача, або в папці зі змінної <code>OLLAMA_MODELS</code>, наприклад <code>D:\AI\ollama-models</code>). Кожна модель займає 1–20 ГБ.</p></details>
     <details><summary>Windows попереджає «невідомий видавець» — це нормально?</summary><p>Так: інсталятор поки не підписаний сертифікатом. Натисни «Докладніше» → «Виконати все одно». Якщо ввімкнено «Інтелектуальне керування програмами» (Smart App Control), Windows може не дати запустити непідписаний файл. Увесь код відкритий на GitHub.</p></details>
-    <details><summary>Як оновити або видалити?</summary><p>Коли виходить нова версія, зліва внизу з'являється кнопка «Оновити» — вона завантажує новий інсталятор, а він ставить версію поверх старої, зберігаючи налаштування. Видалити можна через «Параметри → Програми» Windows; Ollama й моделі залишаються.</p></details>
+    <details><summary>Як оновити або видалити?</summary><p>Коли виходить нова версія, зліва внизу з'являється кнопка «Оновити» — вона завантажує новий інсталятор, а він ставить версію поверх старої, зберігаючи налаштування. Видалити можна в «Налаштуваннях» програми або через «Параметри → Програми» Windows; Ollama й моделі залишаються.</p></details>
   </div>
 </section>
 
 <div class="cta" id="download">
   <img class="logo" src="img/icon.png" alt="">
-  <h2>Open Forge <span class="ver">2.0</span></h2>
+  <h2>Open Forge <span class="ver">2.1</span></h2>
   <p class="lead" style="margin: 0 auto 28px">Безкоштовно, з відкритим кодом. Дані залишаються на твоєму комп'ютері.</p>
   <a class="btn btn-primary dl" href="https://github.com/Dimonchikk/Open-Forge/releases/latest">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
-    Завантажити інсталятор · <span class="size">150 КБ</span>
+    Завантажити інсталятор · <span class="size">170 КБ</span>
   </a>
   <div class="req">
     <span>Windows 10 / 11 (64-bit)</span><span>8+ ГБ RAM</span><span>Відеокарта — бажано</span><span>Ollama встановиться сама</span>
@@ -381,10 +381,11 @@ footer { margin-top: 80px; border-top: 1px solid var(--border); }
 (function () {
   // gallery tabs
   var CAPTIONS = {
-    chat: "Обираєш модель угорі, пишеш питання — відповідь з'являється наживо. Під відповіддю швидкість і кнопка «Копіювати».",
+    chat: "Відповідь з'являється наживо. Код — окремим блоком з кнопкою «Копіювати», будь-який текст можна виділити мишею.",
+    agent: "Агент у папці: модель сама створює файли й підпапки, а під відповіддю — «Відкрити папку» і скільки файлів змінено.",
+    compare: "Одне питання — кілька моделей поруч: швидкість, час і токени під кожною, найшвидша з позначкою.",
     models: "Каталог під твій ПК: зелені моделі влазять у відеопам'ять і працюють швидко. Фільтри за призначенням і цензурою, пошук, завантаження в один клік.",
-    settings: "Інструкція для моделі, дані про твій ПК і перевірка оновлень.",
-    chat_empty: "Порожній чат: Enter — надіслати, Shift+Enter — новий рядок."
+    settings: "Інструкція для моделі, дані про твій ПК, оновлення і видалення програми."
   };
   var tabs = document.querySelectorAll(".tab");
   var light = document.getElementById("g-light"), dark = document.getElementById("g-dark");

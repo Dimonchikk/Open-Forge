@@ -234,26 +234,5 @@ namespace OpenForge
         }
 
         // ── спільне для сторінок ────────────────────────────────────────────────
-
-        // Проста сторінка-заглушка з карткою й поясненням (для розділів, які ще переносяться з версії 1.x).
-        static ScrollHost Placeholder(string caption, string text, out Label body)
-        {
-            var host = new ScrollHost();
-            var page = host.Content;
-            body = Ui.MakeLabel(page, text, Rectangle.Empty, Ui.Body, Ui.CInk2, Ui.CCard);
-            var lbl = body;
-            host.Arrange += () =>
-            {
-                int w = Math.Min(host.Width - Ui.S(64), Ui.S(720));
-                int x = Ui.S(32);
-                page.SetCaption("main", new Rectangle(x + Ui.S(4), Ui.S(8), w, Ui.S(24)), caption);
-                int th = TextRenderer.MeasureText(lbl.Text, Ui.Body, new Size(w - Ui.S(40), int.MaxValue), TextFormatFlags.WordBreak).Height;
-                var card = new Rectangle(x, Ui.S(40), w, th + Ui.S(36));
-                page.Cards.Clear();
-                page.Cards.Add(card);
-                lbl.Bounds = new Rectangle(card.X + Ui.S(20), card.Y + Ui.S(18), card.Width - Ui.S(40), th + Ui.S(2));
-            };
-            return host;
-        }
     }
 }

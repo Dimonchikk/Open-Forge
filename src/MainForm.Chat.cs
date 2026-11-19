@@ -15,8 +15,14 @@ namespace OpenForge
         MessageList chatList;
         InputBox chatInput;
         PillBtn modelBtn, newChatBtn;
-        RoundBtn sendBtn, folderBtn;
+        RoundBtn sendBtn, folderBtn, agentOffBtn;
+        PillBtn agentChip;
         string model;
+
+        // Агент: якщо обрано папку, повідомлення йдуть агенту, який працює з файлами в ній.
+        string agentFolder;
+        AgentPermission agentPerm = AgentPermission.Auto;
+        AgentRun agent;
 
         ChatStream stream;
         ChatMessage answer;
@@ -53,8 +59,19 @@ namespace OpenForge
 
             folderBtn = new RoundBtn { Icon = "folder", Outline = true, Bg = () => Ui.Card };
             folderBtn.Tip = "Агент: модель працює з файлами в обраній папці";
-            folderBtn.Click += (s, e) => MessageBox.Show(this, "Режим агента переноситься з версії 1.2 і з'явиться в наступних збірках 2.0.", "Open Forge");
+            folderBtn.Click += (s, e) => AgentSetup();
             chatInput.Controls.Add(folderBtn);
+
+            agentChip = new PillBtn { Icon = "folder", OnBg = true, FillColor = () => Ui.Mix(Ui.Bg, Ui.Blue, 0.13f), Fore = () => Ui.Blue };
+            agentChip.Click += (s, e) => AgentSetup();
+            chatPage.Controls.Add(agentChip);
+            agentOffBtn = new RoundBtn { Icon = "x", Bg = () => Ui.Bg };
+            agentOffBtn.Tip = "Вимкнути агента";
+            agentOffBtn.Click += (s, e) => SetAgent(null, agentPerm);
+            chatPage.Controls.Add(agentOffBtn);
+            chatList.OpenFolder += OpenInExplorer;
+            int perm = Settings.GetInt("AgentPerm", 1);
+            SetAgent(Settings.GetBool("AgentOn", false) ? Settings.Get("AgentFolder", "") : null, (AgentPermission)Math.Max(0, Math.Min(2, perm)));
 
             pump.Tick += (s, e) => Pump();
             chatPage.Resize += (s, e) => LayoutChat();
@@ -81,7 +98,71 @@ namespace OpenForge
             chatInput.RightInset = b;
             chatInput.Relayout();
 
-            chatList.Bounds = new Rectangle(0, Ui.S(42), w, Math.Max(0, chatInput.Top - Ui.S(50)));
+            int listBottom = chatInput.Top - Ui.S(8);
+            agentChip.Visible = agentOffBtn.Visible = agentFolder != null;
+            if (agentFolder != null)
+            {
+                int cw = Math.Min(col - Ui.S(40), agentChip.Natural()), ch = Ui.S(30);
+                agentChip.Bounds = new Rectangle(x, chatInput.Top - ch - Ui.S(8), cw, ch);
+                agentOffBtn.Bounds = new Rectangle(agentChip.Right + Ui.S(6), agentChip.Top, ch, ch);
+                listBottom = agentChip.Top - Ui.S(6);
+            }
+            chatList.Bounds = new Rectangle(0, Ui.S(42), w, Math.Max(0, listBottom - Ui.S(42)));
+        }
+
+        // ── агент ───────────────────────────────────────────────────────────────
+
+        static readonly string[] PermNames = { "питати завжди", "авто", "повний доступ" };
+
+        void AgentSetup()
+        {
+            if (Busy) return;
+            string start = agentFolder ?? Settings.Get("AgentFolder", "");
+            using (var d = new AgentDialog(start, agentPerm, agentFolder != null))
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                SetAgent(d.TurnOff ? null : d.Folder, d.Permission);
+            }
+            chatInput.Box.Focus();
+        }
+
+        void SetAgent(string folder, AgentPermission perm)
+        {
+            if (folder != null && folder.Length == 0) folder = null;
+            agentFolder = folder;
+            agentPerm = perm;
+            if (folder != null)
+            {
+                Settings.Set("AgentFolder", folder);
+                string name = System.IO.Path.GetFileName(folder.TrimEnd('\\'));
+                agentChip.Text = "Агент у папці «" + (name.Length > 0 ? name : folder) + "» · " + PermNames[(int)perm];
+            }
+            Settings.SetBool("AgentOn", folder != null);
+            Settings.SetInt("AgentPerm", (int)perm);
+            folderBtn.Primary = folder != null;
+            folderBtn.Outline = folder == null;
+            folderBtn.Tip = folder != null ? "Агент увімкнений: " + folder : "Агент: модель працює з файлами в обраній папці";
+            folderBtn.Invalidate();
+            chatInput.Box.Hint = folder != null ? "Що зробити в папці? Наприклад: «створи сайт-візитку»…" : "Напиши повідомлення…";
+            LayoutChat();
+        }
+
+        static void OpenInExplorer(string folder)
+        {
+            try { System.Diagnostics.Process.Start("explorer.exe", "\"" + folder + "\""); } catch { }
+        }
+
+        // Питання з фонового потоку агента: показуємо у вікні й чекаємо відповіді.
+        bool AskAgentPermission(string tool, string title)
+        {
+            bool danger = tool == "run_command" || tool == "delete_file";
+            try
+            {
+                return (bool)Invoke((Func<bool>)(() =>
+                    MessageBox.Show(this, title + "\n\nДозволити цю дію?", "Дозволити дію агента?", MessageBoxButtons.YesNo,
+                        danger ? MessageBoxIcon.Warning : MessageBoxIcon.Question) == DialogResult.Yes));
+            }
+            catch { return false; }
         }
 
         // ── модель ──────────────────────────────────────────────────────────────
@@ -97,6 +178,7 @@ namespace OpenForge
             modelBtn.Enabled = models.Count > 0;
             UpdateChatEmpty();
             LayoutChat();
+            FillCompareModels();
         }
 
         void ShowModelMenu()
@@ -142,9 +224,12 @@ namespace OpenForge
 
         // ── розмова ─────────────────────────────────────────────────────────────
 
+        bool Busy { get { return stream != null || agent != null; } }
+
         void NewChat()
         {
             if (stream != null) stream.Cancel();
+            if (agent != null) agent.Cancel();
             FinishIfDone(true);
             chatList.Clear();
             chatInput.Box.Focus();
@@ -153,6 +238,7 @@ namespace OpenForge
         void Send()
         {
             if (stream != null) { stream.Cancel(); return; }   // кнопка під час відповіді — «Зупинити»
+            if (agent != null) { agent.Cancel(); return; }
             string text = chatInput.Box.Text.Trim();
             if (text.Length == 0) return;
             // Стан Ollama перевіряється раз на 3 с, тож одразу після запуску він ще може бути невідомим —
@@ -179,6 +265,22 @@ namespace OpenForge
             chatList.Add(answer);
             chatInput.Box.Clear();
 
+            if (agentFolder != null)
+            {
+                history.RemoveAt(history.Count - 1);
+                var run = new AgentRun(agentFolder, model, agentPerm, history, Settings.Get("SystemPrompt", ""));
+                run.Confirm = AskAgentPermission;
+                agent = run;
+                answer.Folder = run.Folder;
+                seen = 0;
+                var at = new Thread(() => run.Run(text));
+                at.IsBackground = true;
+                at.Start();
+                pump.Start();
+                SetSending(true);
+                return;
+            }
+
             var s = new ChatStream();
             stream = s;
             seen = 0;
@@ -192,6 +294,7 @@ namespace OpenForge
 
         void Pump()
         {
+            if (agent != null) { PumpAgent(); return; }
             if (stream == null) { pump.Stop(); return; }
             string t = stream.TakeIfChanged(ref seen);
             if (t != null)
@@ -202,15 +305,47 @@ namespace OpenForge
             FinishIfDone(false);
         }
 
+        void PumpAgent()
+        {
+            var run = agent;
+            string t = run.TakeIfChanged(ref seen);
+            if (t != null) { answer.Raw = t; chatList.Changed(answer); }
+            if (!run.Done) return;
+            agent = null;
+            pump.Stop();
+            answer.Streaming = false;
+            answer.Raw = run.Text;
+            int changed = new HashSet<string>(run.Changed).Count;
+            answer.Stats = (changed > 0 ? "змінено файлів: " + changed : "файли не змінювались") + (run.Cancelled ? " · зупинено" : "");
+            if (answer.Display.Length == 0 && run.Error == null) answer.Raw = run.Cancelled ? "Зупинено." : "Готово.";
+            if (run.Error != null)
+            {
+                if (answer.Display.Length == 0) chatList.Remove(answer);
+                chatList.Add(new ChatMessage("error", run.ToolsUnsupported
+                    ? "Модель «" + model + "» не вміє працювати з файлами (не підтримує інструменти). Для агента обери, наприклад, Qwen 3 8B або Qwen 2.5 Coder 7B."
+                    : "Агент зупинився з помилкою: " + run.Error));
+            }
+            chatList.Changed(answer);
+            SetSending(false);
+        }
+
         void FinishIfDone(bool force)
         {
+            if (agent != null && force)
+            {
+                agent = null;
+                pump.Stop();
+                answer.Streaming = false;
+                SetSending(false);
+                return;
+            }
             var s = stream;
             if (s == null || !(s.Done || force)) return;
             stream = null;
             pump.Stop();
             answer.Streaming = false;
             answer.Raw = s.Text;
-            if (answer.Display.Length == 0) chatList.Items.Remove(answer);
+            if (answer.Display.Length == 0) chatList.Remove(answer);
             else
             {
                 var parts = new List<string>();
@@ -219,7 +354,7 @@ namespace OpenForge
                 if (s.Cancelled) parts.Add("зупинено");
                 answer.Stats = string.Join(" · ", parts.ToArray());
             }
-            if (s.Error != null) chatList.Items.Add(new ChatMessage("error", s.Error));
+            if (s.Error != null) chatList.Add(new ChatMessage("error", s.Error));
             chatList.Changed(answer);
             SetSending(false);
         }
@@ -230,6 +365,7 @@ namespace OpenForge
             sendBtn.Tip = on ? "Зупинити" : "Надіслати (Enter)";
             sendBtn.Invalidate();
             modelBtn.Enabled = !on && models.Count > 0;
+            folderBtn.Enabled = agentChip.Enabled = agentOffBtn.Enabled = !on;
         }
     }
 }

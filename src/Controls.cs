@@ -696,21 +696,24 @@ namespace OpenForge
         void Recalc()
         {
             int lines = MinLines;
+            bool over = false;   // текст довший за MaxLines — тоді й лише тоді потрібна смуга прокрутки
             if (Box.Multiline && Box.TextLength > 0)
             {
                 int w = Math.Max(Ui.S(40), Box.ClientSize.Width - Ui.S(4));
                 // Великий вставлений текст не міряємо: він точно довший за MaxLines.
-                if (Box.TextLength > 4000) lines = MaxLines;
+                if (Box.TextLength > 4000) { lines = MaxLines; over = true; }
                 else
                 {
-                    int h = TextRenderer.MeasureText(Box.Text + "​", Box.Font, new Size(w, int.MaxValue),
+                    int h = TextRenderer.MeasureText(Box.Text + "\u200b", Box.Font, new Size(w, int.MaxValue),
                         TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding).Height;
-                    lines = Math.Max(MinLines, Math.Min(MaxLines, (h + LineH / 2) / LineH));
+                    int need = (h + LineH / 2) / LineH;
+                    lines = Math.Max(MinLines, Math.Min(MaxLines, need));
+                    over = need > MaxLines;
                 }
-                bool over = Box.TextLength > 4000 || lines >= MaxLines;
-                var sb = over ? ScrollBars.Vertical : ScrollBars.None;
-                if (Box.ScrollBars != sb) Box.ScrollBars = sb;
             }
+            // Перевіряємо щоразу, зокрема й для порожнього поля: після відправки довгого тексту смуга має зникнути.
+            var sb = Box.Multiline && over ? ScrollBars.Vertical : ScrollBars.None;
+            if (Box.ScrollBars != sb) Box.ScrollBars = sb;
             int want = lines * LineH + 2 * PadY;
             if (want != wanted)
             {

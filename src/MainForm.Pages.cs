@@ -1,4 +1,4 @@
-// Open Forge — розділи «Порівняння» (поки заглушка, переноситься з версії 1.2) і «Налаштування».
+// Open Forge — розділ «Налаштування».
 using System;
 using System.Drawing;
 using System.Text;
@@ -12,14 +12,6 @@ namespace OpenForge
         InputBox sysInput;
         Label pcBody;
         bool hwStarted;
-
-        Control BuildCompare()
-        {
-            Label unused;
-            return Placeholder("Порівняння моделей",
-                "Одне питання — до трьох моделей поруч: видно, яка розумніша й швидша саме на твоєму ПК. " +
-                "Розділ переноситься з версії 1.2 і з'явиться в наступних збірках 2.0.", out unused);
-        }
 
         Control BuildSettings()
         {
@@ -63,6 +55,15 @@ namespace OpenForge
             var site = new PillBtn { Text = "Сайт програми" };
             site.Click += (s, e) => Program.Open("https://dimonchikk.github.io/Open-Forge/");
             page.Controls.Add(site);
+            // Видалення — та сама дія, що й у «Параметри → Програми»: окремий процес з ключем /uninstall
+            // спитає підтвердження, закриє це вікно й прибере програму (Ollama й моделі залишаться).
+            var remove = new PillBtn { Text = "Видалити Open Forge", Fore = () => Ui.Red };
+            remove.Click += (s, e) =>
+            {
+                try { System.Diagnostics.Process.Start(Application.ExecutablePath, "/uninstall"); }
+                catch (Exception ex) { MessageBox.Show(this, "Не вдалося почати видалення:\n" + ex.Message, "Open Forge"); }
+            };
+            page.Controls.Add(remove);
 
             host.Arrange += () =>
             {
@@ -92,6 +93,8 @@ namespace OpenForge
                 about.Bounds = new Rectangle(ab.X + Ui.S(20), ab.Y + Ui.S(18), ab.Width - Ui.S(40), ah + Ui.S(2));
                 check.Bounds = new Rectangle(ab.X + Ui.S(20), about.Bottom + Ui.S(14), check.Natural(), Ui.S(32));
                 site.Bounds = new Rectangle(check.Right + Ui.S(10), check.Top, site.Natural(), Ui.S(32));
+                int rw = remove.Natural();
+                remove.Bounds = new Rectangle(ab.Right - Ui.S(20) - rw, check.Top, rw, Ui.S(32));
             };
             return host;
         }
