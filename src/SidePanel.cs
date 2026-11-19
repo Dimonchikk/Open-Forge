@@ -143,12 +143,18 @@ namespace OpenForge
                 for (int i = from; i < data.Steps.Count; i++)
                 {
                     var st = data.Steps[i];
-                    var r = new Rectangle(pad, y, w, Ui.S(22));
+                    // Довгий крок переноситься на другий рядок (а не обрізається), далі — «…».
+                    const TextFormatFlags wf = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+                    int lh = TextRenderer.MeasureText("Ag", Ui.Small, Size.Empty, TextFormatFlags.NoPadding).Height;
+                    int th = Math.Min(lh * 2, TextRenderer.MeasureText(g, st.Key, Ui.Small, new Size(w - Ui.S(18), 0), wf).Height);
+                    int rh = Math.Max(Ui.S(22), th + Ui.S(9));
+                    var r = new Rectangle(pad, y, w, rh);
                     Color mark = st.Value == 0 ? Ui.Green : st.Value == 1 ? Ui.Red : Ui.Orange;
                     string sym = st.Value == 0 ? "✓" : st.Value == 1 ? "✗" : "•";
-                    Ui.Text(g, sym, Ui.BodySemi, new Rectangle(r.X, r.Y, Ui.S(16), r.Height), mark, Ui.Left);
-                    Ui.Text(g, st.Key, Ui.Small, new Rectangle(r.X + Ui.S(18), r.Y, w - Ui.S(18), r.Height), st.Value == 1 ? Ui.Mix(Ui.Ink2, Ui.Red, 0.6f) : Ui.Ink2, Ui.Left);
-                    y += Ui.S(22);
+                    Ui.Text(g, sym, Ui.BodySemi, new Rectangle(r.X, r.Y, Ui.S(16), Ui.S(22)), mark, Ui.Left);
+                    TextRenderer.DrawText(g, st.Key, Ui.Small, new Rectangle(r.X + Ui.S(18), r.Y + (Ui.S(22) - lh) / 2, w - Ui.S(18), Math.Max(lh, th)),
+                        st.Value == 1 ? Ui.Mix(Ui.Ink2, Ui.Red, 0.6f) : Ui.Ink2, wf);
+                    y += rh;
                 }
                 y += Ui.S(14);
             }

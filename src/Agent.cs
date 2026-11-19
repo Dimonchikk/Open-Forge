@@ -21,7 +21,7 @@ namespace OpenForge
 
     partial class AgentRun
     {
-        public const int MaxSteps = 30;
+        public const int MaxSteps = 60;
         readonly string root, model, instruction;
         readonly AgentPermission permission;
         readonly IList<Turn> history;
@@ -620,7 +620,7 @@ namespace OpenForge
                         pendingShot = null;
                     }
                 }
-                Write("\n\nЗупинився: досягнуто ліміту кроків (" + MaxSteps + ").");
+                Write("\n\nЗупинився: досягнуто ліміту кроків (" + MaxSteps + "). Зроблене збережено в папці — напиши «продовжуй», і агент продовжить з того місця.");
             }
             catch (Exception ex)
             {

@@ -158,7 +158,7 @@ namespace OpenForge
             if (chatPage == null) return;
             int w = chatPage.Width, h = chatPage.Height;
             // Бічна панель праворуч; на вузькому вікні не показуємо (чату лишилось би замало місця).
-            int pw = Math.Min(Ui.S(330), w * 2 / 5);
+            int pw = Math.Min(Ui.S(340), Math.Max(Ui.S(290), w * 2 / 5));
             bool panel = PanelWanted && w - pw >= Ui.S(560);
             sidePanel.Visible = panel;
             if (panel)

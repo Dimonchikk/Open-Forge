@@ -39,6 +39,90 @@ namespace OpenForge
         [DllImport("user32.dll")] static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
         [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
         [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+        [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point p);
+        [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr h, uint flags);
+        [DllImport("user32.dll")] static extern bool AttachThreadInput(uint a, uint b, bool attach);
+        [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+        [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+
+        static int PidOf(IntPtr h) { int pid = 0; if (h != IntPtr.Zero) GetWindowThreadProcessId(h, out pid); return pid; }
+
+        // Чи вікно програми зараз на передньому плані (тільки тоді можна натискати клавіші й мишку).
+        static bool InFront(Win w) { return PidOf(GetForegroundWindow()) == w.Pid; }
+
+        // Вивести вікно наперед. Windows часто не дає фоновій програмі забрати фокус — пробуємо кілька способів
+        // і чесно кажемо, якщо не вийшло (тоді клавіш і кліків мишкою НЕ буде — щоб не надрукувати в чужому вікні).
+        static bool Front(Win w)
+        {
+            if (IsIconic(w.H)) ShowWindow(w.H, 9);
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                if (InFront(w)) return true;
+                IntPtr fg = GetForegroundWindow();
+                int dummy;
+                uint fgThread = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out dummy), me = GetCurrentThreadId();
+                keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero);   // Alt: дозвіл змінити фокус
+                if (fgThread != 0 && fgThread != me) AttachThreadInput(me, fgThread, true);
+                BringWindowToTop(w.H);
+                SetForegroundWindow(w.H);
+                if (fgThread != 0 && fgThread != me) AttachThreadInput(me, fgThread, false);
+                Thread.Sleep(250);
+            }
+            return InFront(w);
+        }
+
+        const string NoFocus = "Windows не дав вивести вікно програми на передній план, тому клавіші й кліки мишкою скасовано " +
+                               "(інакше вони потрапили б у чуже вікно). Спробуй дію з target — кнопки й поля натискаються без мишки — або попроси користувача клікнути у вікно програми.";
+
+        // ── UI Automation без мишки й клавіатури: натиснути кнопку, вписати текст у поле ─────
+        static bool TryPattern(object el, string patternType, out object pattern)
+        {
+            pattern = null;
+            if (el == null || uiaClient == null) return false;
+            try
+            {
+                var pt = uiaClient.GetType("System.Windows.Automation." + patternType);
+                if (pt == null) return false;
+                object id = pt.GetField("Pattern").GetValue(null);
+                var m = el.GetType().GetMethod("TryGetCurrentPattern");
+                var args = new object[] { id, null };
+                if (!(bool)m.Invoke(el, args)) return false;
+                pattern = args[1];
+                return pattern != null;
+            }
+            catch { return false; }
+        }
+
+        // Натиснути елемент «по-справжньому», але без мишки. true — вдалося.
+        static bool UiaPress(object el)
+        {
+            object p;
+            try
+            {
+                if (TryPattern(el, "InvokePattern", out p)) { p.GetType().GetMethod("Invoke").Invoke(p, null); return true; }
+                if (TryPattern(el, "TogglePattern", out p)) { p.GetType().GetMethod("Toggle").Invoke(p, null); return true; }
+                if (TryPattern(el, "SelectionItemPattern", out p)) { p.GetType().GetMethod("Select").Invoke(p, null); return true; }
+                if (TryPattern(el, "ExpandCollapsePattern", out p)) { p.GetType().GetMethod("Expand").Invoke(p, null); return true; }
+            }
+            catch { }
+            return false;
+        }
+
+        static bool UiaSetText(object el, string text)
+        {
+            object p;
+            try
+            {
+                if (!TryPattern(el, "ValuePattern", out p)) return false;
+                object ro = Prop(Prop(p, "Current"), "IsReadOnly");
+                if (ro is bool && (bool)ro) return false;
+                p.GetType().GetMethod("SetValue").Invoke(p, new object[] { text.Replace("\r\n", "\n").Replace("\n", "\r\n") });
+                return true;
+            }
+            catch { return false; }
+        }
 
         static string WText(IntPtr h, bool cls)
         {
@@ -171,7 +255,7 @@ namespace OpenForge
 
         // ── UI Automation (кнопки, поля, меню) — без посилань на збірки, через рефлексію ─────
 
-        class El { public string Name, Type; public Rectangle R; }
+        class El { public string Name, Type; public Rectangle R; public object Obj; }
 
         static Assembly uiaClient;
         static bool uiaTried;
@@ -231,7 +315,7 @@ namespace OpenForge
                             var r = new Rectangle((int)(double)Prop(rect, "X"), (int)(double)Prop(rect, "Y"), (int)(double)Prop(rect, "Width"), (int)(double)Prop(rect, "Height"));
                             if (r.Width < 2 || r.Height < 2) continue;
                             string type = Prop(cur, "LocalizedControlType") as string ?? "";
-                            lock (list) list.Add(new El { Name = name, Type = type, R = r });
+                            lock (list) list.Add(new El { Name = name, Type = type, R = r, Obj = e });
                         }
                         catch { }
                     }
@@ -323,6 +407,15 @@ namespace OpenForge
             }
         }
 
+        // Клік мишкою — лише якщо під курсором справді вікно цієї програми.
+        static bool ClickSafe(Win w, Point p, bool right, bool twice)
+        {
+            IntPtr under = WindowFromPoint(p);
+            if (PidOf(GetAncestor(under, 2)) != w.Pid && PidOf(under) != w.Pid) return false;
+            ClickAt(p, right, twice);
+            return true;
+        }
+
         static string EscapeKeys(string s)
         {
             var sb = new StringBuilder();
@@ -344,14 +437,11 @@ namespace OpenForge
             if (w == null) { result = "вікно з назвою «" + title + "» не знайдено. Відкриті вікна програм агента: " + MyTitles(); return false; }
             if (!Mine(w)) { result = "«" + w.Title + "» — вікно користувача, відкрите ще до початку роботи. Агент керує лише програмами, які запустив сам."; return false; }
 
-            if (IsIconic(w.H)) ShowWindow(w.H, 9);
-            SetForegroundWindow(w.H);
-            Thread.Sleep(250);
             string did;
 
             if (action == "close")
             {
-                PostMessage(w.H, 0x0010, IntPtr.Zero, IntPtr.Zero);   // WM_CLOSE
+                PostMessage(w.H, 0x0010, IntPtr.Zero, IntPtr.Zero);   // WM_CLOSE — без фокусу
                 Thread.Sleep(900);
                 result = IsWindow(w.H) && IsWindowVisible(w.H) ? "вікну надіслано команду закритися, але воно ще відкрите (можливо, питає підтвердження)" : "вікно «" + w.Title + "» закрито";
                 var still = FindWin(title);
@@ -362,17 +452,19 @@ namespace OpenForge
             if (action == "key")
             {
                 if (text.Length == 0) text = target;
+                if (!Front(w)) { result = NoFocus; return false; }
                 SendKeys.SendWait(text);
                 did = "натиснуто " + text;
             }
             else
             {
-                // Куди клікати: за текстом елемента або за координатами з останнього скріншота.
+                // Куди: елемент за текстом (натискаємо через UI Automation, без мишки) або точка зі скріншота.
+                El el = null;
                 Point? at = null;
                 string what = "";
                 if (target.Length > 0)
                 {
-                    var el = FindEl(w, target);
+                    el = FindEl(w, target);
                     if (el == null)
                     {
                         result = "елемент «" + target + "» не знайдено у вікні «" + w.Title + "»." + Elements(w) +
@@ -392,14 +484,30 @@ namespace OpenForge
                 }
                 else if (action != "type") { result = "вкажи target (текст кнопки, пункту меню чи поля) або x і y зі скріншота"; return false; }
 
-                if (at.HasValue) ClickAt(at.Value, action == "right_click", action == "double_click");
                 if (action == "type")
                 {
-                    Thread.Sleep(150);
-                    SendKeys.SendWait(EscapeKeys(text));
+                    // Спершу — вписати прямо в поле (без клавіатури). Клавіші — лише якщо вікно точно попереду.
+                    if (el != null && UiaSetText(el.Obj, text)) { }
+                    else
+                    {
+                        if (!Front(w)) { result = NoFocus; return false; }
+                        if (at.HasValue && !ClickSafe(w, at.Value, false, false)) { result = "точка " + what + " не належить вікну програми — клік скасовано"; return false; }
+                        Thread.Sleep(150);
+                        if (!InFront(w)) { result = NoFocus; return false; }
+                        SendKeys.SendWait(EscapeKeys(text));
+                    }
                     did = "введено «" + (text.Length > 60 ? text.Substring(0, 60) + "…" : text) + "»" + (what.Length > 0 ? " у " + what : "");
                 }
-                else did = (action == "double_click" ? "двічі клікнуто " : action == "right_click" ? "клікнуто правою кнопкою " : "натиснуто ") + what;
+                else
+                {
+                    bool done = action == "click" && el != null && UiaPress(el.Obj);
+                    if (!done)
+                    {
+                        if (!Front(w)) { result = NoFocus; return false; }
+                        if (!ClickSafe(w, at.Value, action == "right_click", action == "double_click")) { result = "точка " + what + " не належить вікну програми — клік скасовано"; return false; }
+                    }
+                    did = (action == "double_click" ? "двічі клікнуто " : action == "right_click" ? "клікнуто правою кнопкою " : "натиснуто ") + what;
+                }
             }
 
             Thread.Sleep(900);   // дати програмі відреагувати
