@@ -170,7 +170,9 @@ namespace OpenForge
                     case "read_file":
                         {
                             string text = File.ReadAllText(SafePath(Arg(a, "path")));
-                            result = text.Length > 20000 ? text.Substring(0, 20000) + "\n…(обрізано)" : text;
+                            // Великі файли обрізаємо, щоб не переповнити пам'ять розмови моделі.
+                            int max = Math.Max(4000, Ollama.NumCtx);   // ≈ чверть контексту в токенах
+                            result = text.Length > max ? text.Substring(0, max) + "\n…(обрізано: файл довший за " + max + " символів)" : text;
                             return true;
                         }
                     case "list_files":
@@ -240,7 +242,7 @@ namespace OpenForge
 
         Dictionary<string, object> Ask(List<object> messages)
         {
-            var body = new Dictionary<string, object> { { "model", model }, { "messages", messages }, { "tools", Tools }, { "stream", false } };
+            var body = new Dictionary<string, object> { { "model", model }, { "messages", messages }, { "tools", Tools }, { "stream", false }, { "options", Ollama.Options() } };
             byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
             var r = (HttpWebRequest)WebRequest.Create(Ollama.Host + "/api/chat");
             r.Method = "POST";
@@ -334,7 +336,7 @@ namespace OpenForge
             catch (Exception ex)
             {
                 if (!cancel) Error = ex is WebException && ((WebException)ex).Status == WebExceptionStatus.ConnectFailure
-                    ? "Ollama не запущена. Запусти її й спробуй ще раз." : ex.Message;
+                    ? "Ollama не запущена. Запусти її й спробуй ще раз." : Ollama.Friendly(ex.Message);
             }
             finally { Done = true; }
         }

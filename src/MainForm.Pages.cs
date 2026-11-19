@@ -26,6 +26,20 @@ namespace OpenForge
             page.Controls.Add(sysInput);
             var sysNote = Ui.MakeLabel(page, "Ця інструкція йде моделі першою в кожному чаті. Зберігається сама.", Rectangle.Empty, Ui.Small, Ui.CInk3, Ui.CBg);
 
+            var ctxSeg = new Segmented { Items = new[] { "4K", "8K", "16K", "32K" }, OnBg = true };
+            ctxSeg.Selected = Math.Max(0, Array.IndexOf(Ollama.ContextSizes, Ollama.NumCtx));
+            var ctxNote = Ui.MakeLabel(page, "", Rectangle.Empty, Ui.Small, Ui.CInk3, Ui.CBg);
+            Action ctxText = () => ctxNote.Text = new[]
+            {
+                "Найменше відеопам'яті, але агенту й довгим розмовам може не вистачити.",
+                "Звичайні чати. Для агента може бути замало.",
+                "Рекомендовано: агент і довгі розмови. На 8B-моделі ≈ +2 ГБ відеопам'яті.",
+                "Великі проєкти й дуже довгі розмови. Потрібно ≥ 12 ГБ відеопам'яті, інакше модель працюватиме повільніше.",
+            }[ctxSeg.Selected];
+            ctxText();
+            ctxSeg.ItemClicked += i => { ctxSeg.Selected = i; Settings.SetInt("NumCtx", Ollama.ContextSizes[i]); ctxText(); };
+            page.Controls.Add(ctxSeg);
+
             pcBody = Ui.MakeLabel(page, "Визначаю…", Rectangle.Empty, Ui.Body, Ui.CInk, Ui.CCard);
 
             var about = Ui.MakeLabel(page, "Open Forge " + AppVersion.Text + " · © 2026 Дмитро Бричнік\nЛокальні нейромережі через Ollama: усе працює на твоєму ПК, нічого не йде в інтернет.",
@@ -75,6 +89,13 @@ namespace OpenForge
                 sysInput.Bounds = new Rectangle(x, y, w, sysInput.Wanted);
                 y = sysInput.Bottom + Ui.S(8);
                 sysNote.Bounds = new Rectangle(x + Ui.S(6), y, w, Ui.S(18));
+                y += Ui.S(42);
+
+                page.SetCaption("ctx", new Rectangle(x + Ui.S(4), y, w, Ui.S(24)), "Пам'ять розмови|скільки тексту модель тримає в голові (контекст)");
+                y += Ui.S(32);
+                ctxSeg.Bounds = new Rectangle(x, y, Math.Min(w, Ui.S(360)), Ui.S(32));
+                y += Ui.S(40);
+                ctxNote.Bounds = new Rectangle(x + Ui.S(6), y, w, Ui.S(18));
                 y += Ui.S(42);
 
                 page.SetCaption("pc", new Rectangle(x + Ui.S(4), y, w, Ui.S(24)), "Твій ПК|від цього залежать рекомендації моделей");

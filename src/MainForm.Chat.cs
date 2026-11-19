@@ -323,7 +323,7 @@ namespace OpenForge
                 if (answer.Display.Length == 0) chatList.Remove(answer);
                 chatList.Add(new ChatMessage("error", run.ToolsUnsupported
                     ? "Модель «" + model + "» не вміє працювати з файлами (не підтримує інструменти). Для агента обери, наприклад, Qwen 3 8B або Qwen 2.5 Coder 7B."
-                    : "Агент зупинився з помилкою: " + run.Error));
+                    : run.Error));
             }
             chatList.Changed(answer);
             SetSending(false);

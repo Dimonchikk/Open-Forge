@@ -109,6 +109,29 @@ namespace OpenForge
     static class Ollama
     {
         public static string Host = "http://127.0.0.1:11434";
+
+        // «Пам'ять розмови» (контекст) у токенах. Ollama за замовчуванням дає лише 4096 — агенту й довгим чатам
+        // цього замало, тож просимо явно. Більше контексту — більше відеопам'яті (на 8B-моделі 16K ≈ +2 ГБ).
+        public static readonly int[] ContextSizes = { 4096, 8192, 16384, 32768 };
+        public static int NumCtx { get { int v = Settings.GetInt("NumCtx", 16384); return Array.IndexOf(ContextSizes, v) >= 0 ? v : 16384; } }
+
+        public static Dictionary<string, object> Options()
+        {
+            return new Dictionary<string, object> { { "num_ctx", NumCtx } };
+        }
+
+        // Зрозуміле пояснення поширених помилок Ollama.
+        public static string Friendly(string err)
+        {
+            if (string.IsNullOrEmpty(err)) return err;
+            if (err.IndexOf("context size", StringComparison.OrdinalIgnoreCase) >= 0 || err.IndexOf("context length", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Розмова не влазить у пам'ять моделі (контекст " + (NumCtx / 1024) + "K токенів). Збільш «Пам'ять розмови» в «Налаштуваннях» або почни новий чат.";
+            if (err.IndexOf("not found", StringComparison.OrdinalIgnoreCase) >= 0 && err.IndexOf("model", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Модель не знайдено в Ollama — можливо, її видалили. Обери іншу або завантаж знову в розділі «Моделі».";
+            if (err.IndexOf("memory", StringComparison.OrdinalIgnoreCase) >= 0 && err.IndexOf("requires more", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Моделі не вистачає пам'яті. Зменш «Пам'ять розмови» в «Налаштуваннях» або обери меншу модель.\n(" + err + ")";
+            return err;
+        }
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
 
         static HttpWebRequest Request(string path, string method, int timeoutMs)
@@ -196,7 +219,7 @@ namespace OpenForge
                     msgs.Add(new Dictionary<string, object> { { "role", "system" }, { "content", system } });
                 foreach (var t in history)
                     msgs.Add(new Dictionary<string, object> { { "role", t.Role }, { "content", t.Content } });
-                var body = new Dictionary<string, object> { { "model", model }, { "messages", msgs }, { "stream", true } };
+                var body = new Dictionary<string, object> { { "model", model }, { "messages", msgs }, { "stream", true }, { "options", Options() } };
                 byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
 
                 // Перша відповідь може йти довго (модель вантажиться у відеопам'ять), тож таймаут великий.
@@ -215,7 +238,7 @@ namespace OpenForge
                         var d = Obj(Json.DeserializeObject(line));
                         if (d == null) continue;
                         string err = Str(d, "error");
-                        if (err != null) { stream.Error = err; break; }
+                        if (err != null) { stream.Error = Friendly(err); break; }
                         var msg = Obj(d.ContainsKey("message") ? d["message"] : null);
                         stream.Append(Str(msg, "content"));
                         if (d.ContainsKey("done") && d["done"] is bool && (bool)d["done"])
@@ -322,7 +345,7 @@ namespace OpenForge
                     using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
                     {
                         string e = Str(Obj(Json.DeserializeObject(sr.ReadToEnd())), "error");
-                        if (!string.IsNullOrEmpty(e)) return e;
+                        if (!string.IsNullOrEmpty(e)) return Friendly(e);
                     }
                 }
                 catch { }
