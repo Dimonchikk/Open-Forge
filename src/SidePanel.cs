@@ -134,15 +134,29 @@ namespace OpenForge
                     Ui.Text(g, data.Status ?? "Готово", Ui.BodySemi, new Rectangle(sr.X + Ui.S(16), sr.Y, w - Ui.S(16), sr.Height), Ui.Ink, Ui.Left);
                 }
                 y += Ui.S(30);
-                int from = Math.Max(0, data.Steps.Count - 12);
+                int from = allSteps ? 0 : Math.Max(0, data.Steps.Count - 15);
                 if (from > 0)
                 {
-                    Ui.Text(g, "… ще " + from + " кроків раніше", Ui.Small, new Rectangle(pad + Ui.S(16), y, w, Ui.S(20)), Ui.Ink3, Ui.Left);
-                    y += Ui.S(22);
+                    var mr = new Rectangle(pad - Ui.S(6), y, w + Ui.S(12), Ui.S(24));
+                    if (hover == "allsteps") Ui.FillRound(g, mr, Ui.S(7), Ui.Fill);
+                    Ui.Text(g, "… ще " + Pl(from, "крок", "кроки", "кроків") + " раніше — показати", Ui.Small, new Rectangle(pad + Ui.S(16), y, w - Ui.S(16), Ui.S(24)), Ui.Blue, Ui.Left);
+                    Hit(mr, "allsteps");
+                    y += Ui.S(26);
                 }
                 for (int i = from; i < data.Steps.Count; i++)
                 {
                     var st = data.Steps[i];
+                    if (st.Value == 3)   // межа між запусками агента
+                    {
+                        if (i == from) continue;
+                        float k1 = Math.Max(1f, Ui.Scale);
+                        int my = y + Ui.S(13);
+                        int lw = TextRenderer.MeasureText(st.Key, Ui.Caps, Size.Empty, TextFormatFlags.NoPadding).Width;
+                        using (var pen = new Pen(Ui.Dark ? Ui.Separator : Ui.CardLine, k1)) { g.DrawLine(pen, pad, my, pad + Ui.S(10), my); g.DrawLine(pen, pad + lw + Ui.S(22), my, pad + w, my); }
+                        Ui.Text(g, st.Key, Ui.Caps, new Rectangle(pad + Ui.S(16), y + Ui.S(3), lw + Ui.S(4), Ui.S(20)), Ui.Ink3, Ui.Left);
+                        y += Ui.S(26);
+                        continue;
+                    }
                     // Довгий крок переноситься на другий рядок (а не обрізається), далі — «…».
                     const TextFormatFlags wf = TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
                     int lh = TextRenderer.MeasureText("Ag", Ui.Small, Size.Empty, TextFormatFlags.NoPadding).Height;
@@ -297,7 +311,7 @@ namespace OpenForge
             }
         }
 
-        bool firstSec;
+        bool firstSec, allSteps;
         Rectangle closeRect;
 
         bool Section(Graphics g, string title, string key, string summary, ref int y, int pad, int w)
@@ -388,6 +402,7 @@ namespace OpenForge
             string k = HitKey(e.Location);
             if (k == null) return;
             if (k == "close") { if (Close != null) Close(); return; }
+            if (k == "allsteps") { allSteps = true; Invalidate(); return; }
             if (k.StartsWith("sec:"))
             {
                 string key = k.Substring(4);

@@ -502,14 +502,21 @@ namespace OpenForge
                 d.Live = lastAgent.Streaming;
                 d.Since = lastAgent.StartedAt;
                 d.Status = lastAgent.Streaming ? null : "Готово" + (string.IsNullOrEmpty(lastAgent.Stats) ? "" : " · " + lastAgent.Stats.Split('·').Last().Trim());
-                foreach (string line in lastAgent.Display.Split('\n'))
+                // Кроки всіх запусків агента в цій папці (після «продовжуй» попередні не зникають),
+                // між запусками — позначка «Продовження» (стан 3).
+                foreach (var am in items)
                 {
-                    string t = line.TrimStart();
-                    if (!t.StartsWith("▸ ")) continue;
-                    t = t.Substring(2);
-                    int state = t.Contains("  ✗") ? 1 : t.Contains("  ✓") ? 0 : lastAgent.Streaming ? 2 : 0;
-                    int mark = t.IndexOf("  ");
-                    d.Steps.Add(new KeyValuePair<string, int>(mark > 0 ? t.Substring(0, mark) : t, state));
+                    if (am.Role != "assistant" || am.Folder == null || !string.Equals(am.Folder, lastAgent.Folder, StringComparison.OrdinalIgnoreCase)) continue;
+                    if (d.Steps.Count > 0) d.Steps.Add(new KeyValuePair<string, int>("Продовження", 3));
+                    foreach (string line in am.Display.Split('\n'))
+                    {
+                        string t = line.TrimStart();
+                        if (!t.StartsWith("▸ ")) continue;
+                        t = t.Substring(2);
+                        int state = t.Contains("  ✗") ? 1 : t.Contains("  ✓") ? 0 : am.Streaming ? 2 : 0;
+                        int mark = t.IndexOf("  ");
+                        d.Steps.Add(new KeyValuePair<string, int>(mark > 0 ? t.Substring(0, mark) : t, state));
+                    }
                 }
             }
             var seenFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
