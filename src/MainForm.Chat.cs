@@ -333,22 +333,19 @@ namespace OpenForge
         void ShowModelMenu()
         {
             if (models.Count == 0) return;
-            var menu = new ContextMenuStrip();
+            var items = new List<PopupItem>();
             foreach (var m in models)
             {
                 string name = m.Name;
-                var it = new ToolStripMenuItem(name + "   ·   " + m.SizeGb.ToString("0.0") + " ГБ");
-                it.Checked = name == model;
-                it.Click += (s, e) =>
+                items.Add(new PopupItem(name, name == model, () =>
                 {
                     model = name;
                     Settings.Set("Model", name);
                     modelBtn.Text = name;
                     LayoutChat();
-                };
-                menu.Items.Add(it);
+                }) { Sub = m.SizeGb.ToString("0.0") + " ГБ" });
             }
-            menu.Show(modelBtn, new Point(0, modelBtn.Height + Ui.S(4)));
+            PopupMenu.Show(modelBtn, items);
         }
 
         void UpdateChatEmpty()

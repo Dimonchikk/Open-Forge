@@ -48,7 +48,7 @@ namespace OpenForge
             fitSeg.ItemClicked += i => { fitSeg.Selected = i; Settings.SetInt("ModelsFit", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
             box.Controls.Add(fitSeg);
 
-            sortBtn = new PillBtn { Icon = "chevron", OnBg = true };
+            sortBtn = new PillBtn { Icon = "sort", OnBg = true };
             sortBtn.Click += (s, e) => ShowSortMenu();
             box.Controls.Add(sortBtn);
             UpdateSortBtn();
@@ -120,23 +120,21 @@ namespace OpenForge
 
         void ShowSortMenu()
         {
-            var menu = new ContextMenuStrip();
             int cur = Settings.GetInt("ModelsSort", 0);
+            var items = new List<PopupItem>();
             for (int i = 0; i < Sorts.Length; i++)
             {
                 int k = i;
-                var it = new ToolStripMenuItem(Sorts[i]) { Checked = i == cur };
-                it.Click += (s, e) =>
+                items.Add(new PopupItem(Sorts[i], i == cur, () =>
                 {
                     Settings.SetInt("ModelsSort", k);
                     UpdateSortBtn();
                     LayoutModelsHeader();   // ширина кнопки змінилась
                     RefreshModelsPage();
                     modelsHost.ScrollTo(0);
-                };
-                menu.Items.Add(it);
+                }));
             }
-            menu.Show(sortBtn, new Point(0, sortBtn.Height + Ui.S(4)));
+            PopupMenu.Show(sortBtn, items);
         }
 
         void DetectHardware()

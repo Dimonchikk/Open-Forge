@@ -161,6 +161,11 @@ namespace OpenForge
                         g.DrawLines(pen, new[] { P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.2f, 0.06f), P(x, y, s, 0.2f, 0.94f), P(x, y, s, 0.8f, 0.94f),
                             P(x, y, s, 0.8f, 0.26f), P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.6f, 0.26f), P(x, y, s, 0.8f, 0.26f) });
                         break;
+                    case "sort":      // смужки, що коротшають
+                        g.DrawLine(pen, P(x, y, s, 0.12f, 0.24f), P(x, y, s, 0.88f, 0.24f));
+                        g.DrawLine(pen, P(x, y, s, 0.12f, 0.5f), P(x, y, s, 0.64f, 0.5f));
+                        g.DrawLine(pen, P(x, y, s, 0.12f, 0.76f), P(x, y, s, 0.4f, 0.76f));
+                        break;
                     case "search":    // лупа
                         g.DrawEllipse(pen, x + s * 0.1f, y + s * 0.1f, s * 0.56f, s * 0.56f);
                         g.DrawLine(pen, P(x, y, s, 0.6f, 0.6f), P(x, y, s, 0.9f, 0.9f));
