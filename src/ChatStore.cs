@@ -80,6 +80,7 @@ namespace OpenForge
                 if (m.Model != null) d["model"] = m.Model;
                 if (m.Stats != null) d["stats"] = m.Stats;
                 if (m.Folder != null) d["folder"] = m.Folder;
+                if (m.Images != null && m.Images.Count > 0) d["images"] = m.Images.ToArray();
                 list.Add(d);
             }
             if (list.Count == 0) return;
@@ -112,7 +113,11 @@ namespace OpenForge
                 {
                     var m = o as Dictionary<string, object>;
                     if (m == null) continue;
-                    res.Add(new ChatMessage(S(m, "role") ?? "user", S(m, "content") ?? "") { Model = S(m, "model"), Stats = S(m, "stats"), Folder = S(m, "folder") });
+                    var cm = new ChatMessage(S(m, "role") ?? "user", S(m, "content") ?? "") { Model = S(m, "model"), Stats = S(m, "stats"), Folder = S(m, "folder") };
+                    object imgs;
+                    if (m.TryGetValue("images", out imgs) && imgs is object[])
+                        cm.Images = ((object[])imgs).Select(x => Convert.ToString(x)).Where(x => !string.IsNullOrEmpty(x)).ToList();
+                    res.Add(cm);
                 }
             return res;
         }

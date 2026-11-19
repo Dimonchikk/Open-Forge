@@ -22,6 +22,8 @@ namespace OpenForge
         public string Stats;         // «24.1 ток/с · 3.2 с»
         public string Folder;        // папка агента (кнопка «Відкрити папку»)
         public double Tag;           // швидкість (для «Порівняння»)
+        public List<string> Images;  // прикріплені картинки (JPEG base64)
+        internal List<Bitmap> Thumbs;
         public bool Streaming;
         public bool StepsOpen;       // кроки агента розгорнуті
 
@@ -65,7 +67,7 @@ namespace OpenForge
     // Один рядок вихідного тексту (або шматок дуже довгого рядка), розкладений на рядки екрана.
     class Para
     {
-        public const int Text = 0, CodeLine = 1, CodeHead = 2, CodeFoot = 3, Steps = 4;
+        public const int Text = 0, CodeLine = 1, CodeHead = 2, CodeFoot = 3, Steps = 4, Images = 5;
         public int Kind;
         public bool Step;                            // рядок зі списку кроків агента (з відступом, блідий)
         public List<string> StepList;                // для Steps: усі кроки групи
@@ -243,6 +245,22 @@ namespace OpenForge
 
             // 1. Розбити на абзаци: звичайні рядки й блоки коду між ``` (лише у відповідях моделі).
             var paras = new List<Para>();
+            int imagesW = 0;
+            if (m.Images != null && m.Images.Count > 0)
+            {
+                if (m.Thumbs == null)
+                {
+                    m.Thumbs = new List<Bitmap>();
+                    foreach (string b in m.Images)
+                    {
+                        var img = Pictures.Decode(b);
+                        if (img == null) continue;
+                        using (img) m.Thumbs.Add(Pictures.Thumb(img, Ui.S(110), Ui.S(220)));
+                    }
+                }
+                foreach (var t in m.Thumbs) imagesW += t.Width + Ui.S(6);
+                paras.Add(new Para { Kind = Para.Images, Str = "", Start = 0 });
+            }
             bool parseCode = m.Role == "assistant";
             bool inCode = false;
             Para head = null, steps = null;
@@ -325,6 +343,7 @@ namespace OpenForge
                 if (p.Kind == Para.CodeHead) p.H = Ui.S(34);
                 else if (p.Kind == Para.CodeFoot) p.H = Ui.S(20);
                 else if (p.Kind == Para.Steps) p.H = Ui.S(36);
+                else if (p.Kind == Para.Images) { p.H = Ui.S(110) + Ui.S(8); maxW = Math.Max(maxW, imagesW); }
                 else
                 {
                     int fi = p.Kind == Para.CodeLine ? 1 : 0;
@@ -562,6 +581,22 @@ namespace OpenForge
                     continue;
                 }
                 if (p.Kind == Para.CodeFoot) continue;
+                if (p.Kind == Para.Images)
+                {
+                    int ix = v.X;
+                    foreach (var t in m.Thumbs)
+                    {
+                        var ir = new Rectangle(ix, v.Y, t.Width, t.Height);
+                        using (var path = Ui.Round(ir, Ui.S(10)))
+                        {
+                            g.SetClip(path);
+                            g.DrawImage(t, ir);
+                            g.ResetClip();
+                        }
+                        ix += t.Width + Ui.S(6);
+                    }
+                    continue;
+                }
                 if (p.Kind == Para.Steps)
                 {
                     var sr = StepsRect(v);
@@ -834,6 +869,15 @@ namespace OpenForge
             if (ShowDown && DownRect.Contains(p)) { obj = this; key = "down"; return true; }
             foreach (var v in VisibleParas())
             {
+                if (v.P.Kind == Para.Images && v.M.Thumbs != null)
+                {
+                    int ix = v.X;
+                    for (int i = 0; i < v.M.Thumbs.Count; i++)
+                    {
+                        if (new Rectangle(ix, v.Y, v.M.Thumbs[i].Width, v.M.Thumbs[i].Height).Contains(p) && i < v.M.Images.Count) { obj = v.M.Images[i]; key = "img"; return true; }
+                        ix += v.M.Thumbs[i].Width + Ui.S(6);
+                    }
+                }
                 if (v.P.Kind == Para.CodeHead && CodeCopyRect(v).Contains(p)) { obj = v.P; key = "code"; return true; }
                 if (v.P.Kind == Para.Steps && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
             }
@@ -945,6 +989,7 @@ namespace OpenForge
             else if (key == "folder" && OpenFolder != null) OpenFolder(((ChatMessage)obj).Folder);
             else if (key == "speak" && Speak != null) Speak((ChatMessage)obj);
             else if (key == "down") ScrollToEnd();
+            else if (key == "img") Pictures.Open((string)obj);
             else if (key == "steps")
             {
                 var m = (ChatMessage)obj;

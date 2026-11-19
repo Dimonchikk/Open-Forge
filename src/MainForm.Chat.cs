@@ -3,6 +3,7 @@
 // і перемальовує лише змінене. Тож вікно не «зависає», хоч би якою довгою була відповідь чи вставлений текст.
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
@@ -15,7 +16,8 @@ namespace OpenForge
         MessageList chatList;
         InputBox chatInput;
         PillBtn modelBtn;
-        RoundBtn sendBtn, folderBtn, agentOffBtn;
+        RoundBtn sendBtn, folderBtn, agentOffBtn, imageBtn;
+        AttachStrip attach;
         HistoryList historyList;
         string chatId, chatTitle;   // поточний чат в історії (null — ще не збережений)
         readonly System.Windows.Forms.Timer speakTimer = new System.Windows.Forms.Timer { Interval = 250 };
@@ -76,6 +78,23 @@ namespace OpenForge
             folderBtn.Click += (s, e) => AgentSetup();
             chatInput.Controls.Add(folderBtn);
 
+            // Картинки: кнопка, Ctrl+V зі скріншотом, перетягування файлів.
+            imageBtn = new RoundBtn { Icon = "image", Outline = true, Bg = () => Ui.Card };
+            imageBtn.Tip = "Додати фото чи скріншот (або Ctrl+V, або перетягни файл)";
+            imageBtn.Click += (s, e) => PickImages();
+            chatInput.Controls.Add(imageBtn);
+            attach = new AttachStrip();
+            attach.Changed += LayoutChat;
+            chatPage.Controls.Add(attach);
+            chatInput.Box.ImagePasted += img => AddImage(Pictures.Encode(img));
+            chatInput.Box.FilesPasted += AddImageFiles;
+            foreach (Control c in new Control[] { chatList, chatInput, chatInput.Box, chatPage })
+            {
+                c.AllowDrop = true;
+                c.DragEnter += (s, e) => e.Effect = DroppedImages(e.Data).Length > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+                c.DragDrop += (s, e) => AddImageFiles(DroppedImages(e.Data));
+            }
+
             agentChip = new PillBtn { Icon = "folder", OnBg = true, FillColor = () => Ui.Mix(Ui.Bg, Ui.Blue, 0.13f), Fore = () => Ui.Blue };
             agentChip.Click += (s, e) => AgentSetup();
             chatPage.Controls.Add(agentChip);
@@ -106,20 +125,74 @@ namespace OpenForge
             int b = Ui.S(32), pad = Ui.S(5);
             sendBtn.Bounds = new Rectangle(chatInput.Width - b - pad - Ui.S(1), chatInput.Height - b - pad - Ui.S(1), b, b);
             folderBtn.Bounds = new Rectangle(pad + Ui.S(1), chatInput.Height - b - pad - Ui.S(1), b, b);
-            chatInput.LeftInset = b - Ui.S(4);
+            imageBtn.Bounds = new Rectangle(folderBtn.Right + Ui.S(4), folderBtn.Top, b, b);
+            chatInput.LeftInset = 2 * b;
             chatInput.RightInset = b;
             chatInput.Relayout();
 
             int listBottom = chatInput.Top - Ui.S(8);
+            attach.Visible = attach.Images.Count > 0;
+            if (attach.Visible)
+            {
+                attach.Bounds = new Rectangle(x, listBottom - Ui.S(66), col, Ui.S(66));
+                listBottom = attach.Top - Ui.S(4);
+            }
             agentChip.Visible = agentOffBtn.Visible = agentFolder != null;
             if (agentFolder != null)
             {
                 int cw = Math.Min(col - Ui.S(40), agentChip.Natural()), ch = Ui.S(30);
-                agentChip.Bounds = new Rectangle(x, chatInput.Top - ch - Ui.S(8), cw, ch);
+                agentChip.Bounds = new Rectangle(x, listBottom - ch, cw, ch);
                 agentOffBtn.Bounds = new Rectangle(agentChip.Right + Ui.S(6), agentChip.Top, ch, ch);
                 listBottom = agentChip.Top - Ui.S(6);
             }
             chatList.Bounds = new Rectangle(0, Ui.S(42), w, Math.Max(0, listBottom - Ui.S(42)));
+        }
+
+        // ── картинки ────────────────────────────────────────────────────────────
+
+        static string[] DroppedImages(IDataObject data)
+        {
+            try
+            {
+                if (!data.GetDataPresent(DataFormats.FileDrop)) return new string[0];
+                return ((string[])data.GetData(DataFormats.FileDrop)).Where(Pictures.IsImageFile).ToArray();
+            }
+            catch { return new string[0]; }
+        }
+
+        void PickImages()
+        {
+            using (var d = new OpenFileDialog { Filter = Pictures.DialogFilter, Multiselect = true, Title = "Фото чи скріншот для моделі" })
+                if (d.ShowDialog(this) == DialogResult.OK) AddImageFiles(d.FileNames);
+            chatInput.Box.Focus();
+        }
+
+        void AddImageFiles(string[] files)
+        {
+            foreach (string f in files) if (!AddImage(Pictures.FromFile(f))) break;
+        }
+
+        bool AddImage(string b64)
+        {
+            if (b64 == null) return true;
+            if (attach.Images.Count >= Pictures.MaxPerMessage)
+            {
+                MessageBox.Show(this, "До одного повідомлення можна додати до " + Pictures.MaxPerMessage + " картинок.", "Open Forge");
+                return false;
+            }
+            attach.Add(b64);
+            if (ModelSeesImages(model) == false)
+                chatList.Add(new ChatMessage("error", "Модель «" + model + "» не бачить картинок. Обери модель з позначкою «Розуміє картинки» — наприклад Qwen 3 VL 8B, Qwen 2.5 VL 7B чи Gemma 3 (фільтр «Зображення» в «Налаштування → Моделі»)."));
+            chatInput.Box.Focus();
+            return true;
+        }
+
+        // true/false — точно знаємо з каталогу; null — модель не з каталогу, хай вирішить Ollama.
+        static bool? ModelSeesImages(string name)
+        {
+            var c = Catalog.Find(name ?? "");
+            if (c == null) return null;
+            return c.Vision;
         }
 
         // ── агент ───────────────────────────────────────────────────────────────
@@ -337,7 +410,9 @@ namespace OpenForge
             if (stream != null) { stream.Cancel(); return; }   // кнопка під час відповіді — «Зупинити»
             if (agent != null) { agent.Cancel(); return; }
             string text = chatInput.Box.Text.Trim();
-            if (text.Length == 0) return;
+            var images = attach.Images.Count > 0 ? new List<string>(attach.Images) : null;
+            if (text.Length == 0 && images == null) return;
+            if (text.Length == 0) text = "Що на цьому зображенні?";
             // Стан Ollama перевіряється раз на 3 с, тож одразу після запуску він ще може бути невідомим —
             // не блокуємо: якщо Ollama справді не працює, запит сам поверне зрозумілу помилку.
             if (string.IsNullOrEmpty(model))
@@ -353,11 +428,22 @@ namespace OpenForge
             {
                 if (m.Role != "user" && m.Role != "assistant") continue;
                 string t = m.Role == "assistant" ? m.Display : m.Raw;
-                if (t.Length > 0) history.Add(new Turn(m.Role, t));
+                if (t.Length > 0) history.Add(new Turn(m.Role, t) { Images = m.Role == "user" ? m.Images : null });
             }
-            history.Add(new Turn("user", text));
+            history.Add(new Turn("user", text) { Images = images });
+            // Картинки «важкі» для пам'яті розмови: моделі передаємо лише 4 найсвіжіші.
+            int left = 4;
+            for (int i = history.Count - 1; i >= 0; i--)
+            {
+                var im = history[i].Images;
+                if (im == null) continue;
+                if (left <= 0) history[i].Images = null;
+                else if (im.Count > left) history[i].Images = im.GetRange(im.Count - left, left);
+                left -= im.Count;
+            }
 
-            chatList.Add(new ChatMessage("user", text));
+            chatList.Add(new ChatMessage("user", text) { Images = images });
+            attach.Clear();
             if (chatId == null) { chatId = ChatStore.NewId(); chatTitle = ChatStore.TitleFrom(text); }
             SaveChat();
             answer = new ChatMessage("assistant", "") { Streaming = true, Model = model };
@@ -368,6 +454,7 @@ namespace OpenForge
             {
                 history.RemoveAt(history.Count - 1);
                 var run = new AgentRun(agentFolder, model, agentPerm, history, Settings.Get("SystemPrompt", ""));
+                run.TaskImages = images;
                 run.Confirm = AskAgentPermission;
                 agent = run;
                 answer.Folder = run.Folder;

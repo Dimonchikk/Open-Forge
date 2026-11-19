@@ -51,6 +51,7 @@ namespace OpenForge
         }
 
         public string Folder { get { return root; } }
+        public List<string> TaskImages;   // картинки до завдання (якщо модель їх розуміє)
         public bool Cancelled { get { return cancel; } }
 
         public void Cancel()
@@ -288,8 +289,8 @@ namespace OpenForge
                     "reply with a short summary of what you did, in the user's language.\nProject folder: " + root;
                 if (!string.IsNullOrEmpty(instruction) && instruction.Trim().Length > 0) system += "\n\nUser instruction: " + instruction;
                 var messages = new List<object> { new Dictionary<string, object> { { "role", "system" }, { "content", system } } };
-                foreach (var t in history) messages.Add(new Dictionary<string, object> { { "role", t.Role }, { "content", t.Content } });
-                messages.Add(new Dictionary<string, object> { { "role", "user" }, { "content", task } });
+                foreach (var t in history) messages.Add(t.ToJson());
+                messages.Add(new Turn("user", task) { Images = TaskImages }.ToJson());
 
                 for (int step = 0; step < MaxSteps; step++)
                 {

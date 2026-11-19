@@ -632,8 +632,26 @@ namespace OpenForge
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
+        // Вставлено картинку (скріншот) або файли-картинки — їх забирає власник поля, а не текст.
+        public event Action<System.Drawing.Image> ImagePasted;
+        public event Action<string[]> FilesPasted;
+
         public void PastePlain()
         {
+            try
+            {
+                if (ImagePasted != null && Clipboard.ContainsImage())
+                {
+                    using (var img = Clipboard.GetImage()) if (img != null) { ImagePasted(img); return; }
+                }
+                if (FilesPasted != null && Clipboard.ContainsFileDropList())
+                {
+                    var files = new System.Collections.Generic.List<string>();
+                    foreach (string f in Clipboard.GetFileDropList()) if (Pictures.IsImageFile(f)) files.Add(f);
+                    if (files.Count > 0) { FilesPasted(files.ToArray()); return; }
+                }
+            }
+            catch { }
             string t;
             try { t = Clipboard.ContainsText() ? Clipboard.GetText() : null; } catch { t = null; }
             if (t == null) return;

@@ -23,7 +23,15 @@ namespace OpenForge
     class Turn
     {
         public string Role, Content;   // "system", "user", "assistant"
+        public List<string> Images;    // картинки (JPEG base64) — лише для моделей, що їх розуміють
         public Turn(string role, string content) { Role = role; Content = content; }
+
+        public Dictionary<string, object> ToJson()
+        {
+            var d = new Dictionary<string, object> { { "role", Role }, { "content", Content } };
+            if (Images != null && Images.Count > 0) d["images"] = Images.ToArray();
+            return d;
+        }
     }
 
     // Одна відповідь моделі, що надходить частинами. Пише фоновий потік, читає вікно.
@@ -130,6 +138,8 @@ namespace OpenForge
                 return "Модель не знайдено в Ollama — можливо, її видалили. Обери іншу або завантаж знову в розділі «Моделі».";
             if (err.IndexOf("memory", StringComparison.OrdinalIgnoreCase) >= 0 && err.IndexOf("requires more", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "Моделі не вистачає пам'яті. Зменш «Пам'ять розмови» в «Налаштуваннях» або обери меншу модель.\n(" + err + ")";
+            if (err.IndexOf("image", StringComparison.OrdinalIgnoreCase) >= 0 && (err.IndexOf("support", StringComparison.OrdinalIgnoreCase) >= 0 || err.IndexOf("vision", StringComparison.OrdinalIgnoreCase) >= 0))
+                return "Ця модель не бачить картинок. Обери модель з позначкою «Розуміє картинки» (фільтр «Зображення» в «Налаштування → Моделі»).";
             return err;
         }
         static readonly JavaScriptSerializer Json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
@@ -217,8 +227,7 @@ namespace OpenForge
                 var msgs = new List<object>();
                 if (!string.IsNullOrEmpty(system) && system.Trim().Length > 0)
                     msgs.Add(new Dictionary<string, object> { { "role", "system" }, { "content", system } });
-                foreach (var t in history)
-                    msgs.Add(new Dictionary<string, object> { { "role", t.Role }, { "content", t.Content } });
+                foreach (var t in history) msgs.Add(t.ToJson());
                 var body = new Dictionary<string, object> { { "model", model }, { "messages", msgs }, { "stream", true }, { "options", Options() } };
                 byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
 

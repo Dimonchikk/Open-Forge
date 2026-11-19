@@ -78,6 +78,11 @@ namespace OpenForge
                         g.DrawLines(pen, new[] { P(x, y, s, 0.2f, 0.8f), P(x, y, s, 0.22f, 0.62f), P(x, y, s, 0.7f, 0.14f), P(x, y, s, 0.88f, 0.32f),
                             P(x, y, s, 0.4f, 0.8f), P(x, y, s, 0.2f, 0.8f) });
                         break;
+                    case "image":   // рамка з горою й сонцем
+                        using (var p = Ui.Round(new RectangleF(x + s * 0.08f, y + s * 0.16f, s * 0.84f, s * 0.68f), s * 0.12f)) g.DrawPath(pen, p);
+                        g.DrawLines(pen, new[] { P(x, y, s, 0.14f, 0.76f), P(x, y, s, 0.4f, 0.48f), P(x, y, s, 0.58f, 0.64f), P(x, y, s, 0.7f, 0.54f), P(x, y, s, 0.86f, 0.7f) });
+                        g.DrawEllipse(pen, x + s * 0.6f, y + s * 0.28f, s * 0.12f, s * 0.12f);
+                        break;
                     case "chevron-right":
                         g.DrawLines(pen, new[] { P(x, y, s, 0.38f, 0.22f), P(x, y, s, 0.64f, 0.5f), P(x, y, s, 0.38f, 0.78f) });
                         break;
