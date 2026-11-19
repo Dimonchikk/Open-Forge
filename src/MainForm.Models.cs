@@ -13,9 +13,10 @@ namespace OpenForge
     {
         static readonly string[] Purposes = { "Усі", "Чат", "Код", "Зображення", "Міркування", "Переклад", "Швидкі", "Встановлені" };
         static readonly string[] Censors = { "Будь-які", "З цензурою", "Без цензури" };
+        static readonly string[] Fits = { "Усі", "Потягне мій ПК", "Тільки швидкі" };
 
         ScrollHost modelsHost;
-        Segmented purposeSeg, censorSeg;
+        Segmented purposeSeg, censorSeg, fitSeg;
         InputBox modelSearch;
         Label modelsInfo;
         ModelList modelList;
@@ -40,6 +41,11 @@ namespace OpenForge
             censorSeg.ItemClicked += i => { censorSeg.Selected = i; Settings.SetInt("ModelsCensor", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
             box.Controls.Add(censorSeg);
 
+            fitSeg = new Segmented { Items = Fits, OnBg = true };
+            fitSeg.Selected = Math.Max(0, Math.Min(2, Settings.GetInt("ModelsFit", 0)));
+            fitSeg.ItemClicked += i => { fitSeg.Selected = i; Settings.SetInt("ModelsFit", i); RefreshModelsPage(); modelsHost.ScrollTo(0); };
+            box.Controls.Add(fitSeg);
+
             modelSearch = new InputBox { Around = () => Ui.Bg };
             modelSearch.Box.Hint = "Пошук: qwen, кодер, переклад…";
             modelSearch.Box.TextChanged += (s, e) => { RefreshModelsPage(); modelsHost.ScrollTo(0); };
@@ -62,9 +68,17 @@ namespace OpenForge
                 int x = Ui.S(32), w = ModelsWidth(box.Width), y = Ui.S(4);
                 purposeSeg.Bounds = new Rectangle(x, y, Math.Min(w, Ui.S(920)), Ui.S(32));
                 y += Ui.S(44);
-                int cw = Math.Min(Ui.S(340), w / 2);
+                int cw = Math.Min(Ui.S(320), w / 2), fw = Math.Min(Ui.S(380), w - cw - Ui.S(12));
                 censorSeg.Bounds = new Rectangle(x, y, cw, Ui.S(32));
-                modelSearch.Bounds = new Rectangle(x + cw + Ui.S(12), y - Ui.S(2), Math.Min(w - cw - Ui.S(12), Ui.S(560)), Ui.S(36));
+                fitSeg.Bounds = new Rectangle(x + cw + Ui.S(12), y, fw, Ui.S(32));
+                int sx = fitSeg.Right + Ui.S(12);
+                if (x + w - sx >= Ui.S(220))   // пошук влазить у той самий рядок
+                    modelSearch.Bounds = new Rectangle(sx, y - Ui.S(2), Math.Min(x + w - sx, Ui.S(440)), Ui.S(36));
+                else
+                {
+                    y += Ui.S(46);
+                    modelSearch.Bounds = new Rectangle(x, y - Ui.S(2), Math.Min(w, Ui.S(560)), Ui.S(36));
+                }
                 y += Ui.S(46);
                 modelsInfo.Bounds = new Rectangle(x + Ui.S(4), y, w, Ui.S(18));
                 y += Ui.S(28);
@@ -121,13 +135,18 @@ namespace OpenForge
             }
             if (c == 1) list = list.Where(m => !m.Uncensored);
             if (c == 2) list = list.Where(m => m.Uncensored);
+            int fsel = fitSeg.Selected;
+            if (fsel > 0 && Hardware.Done && Hardware.RamGb > 0)
+                list = list.Where(m => !m.Known || m.FitFor(Hardware.VramGb, Hardware.RamGb) <= (fsel == 1 ? Fit.Slow : Fit.Fast));
             if (q.Length > 0)
                 list = list.Where(m => m.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 || m.Id.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
                                        m.Description.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);
             double vram = Hardware.VramGb, ram = Hardware.RamGb;
-            // Спершу встановлені, далі те, що піде швидко, потім повільніше, потім те, на що пам'яті замало; всередині — порядок каталогу.
+            // Спершу встановлені, далі те, що піде швидко, потім повільніше, потім те, що не потягне;
+            // всередині — найсильніші зверху, а за однакової сили — порядок каталогу.
             var shown = list.Select((m, i) => new { m, i })
-                .OrderBy(x => x.m.Installed ? 0 : 1).ThenBy(x => x.m.Known ? (int)x.m.FitFor(vram, ram) : -1).ThenBy(x => x.i).Select(x => x.m).ToList();
+                .OrderBy(x => x.m.Installed ? 0 : 1).ThenBy(x => x.m.Known ? (int)x.m.FitFor(vram, ram) : -1)
+                .ThenByDescending(x => x.m.Known ? x.m.Power : 0).ThenBy(x => x.i).Select(x => x.m).ToList();
 
             modelList.Items = shown;
             modelList.VramGb = vram;
@@ -140,7 +159,7 @@ namespace OpenForge
                 : "Твій ПК: " + (Hardware.GpuName.Length > 0 ? Hardware.GpuName + ", " : "") + Hardware.VramGb.ToString("0") + " ГБ відеопам'яті, " +
                   Hardware.RamGb.ToString("0") + " ГБ RAM";
             string tail = p == 3 ? " · «Зображення» — моделі, що розуміють картинки (малювати їх Ollama не вміє)" :
-                ollamaVersion == null ? " · Ollama не запущена — завантаження почнеться, коли вона запрацює" : " · зелені підуть швидко";
+                ollamaVersion == null ? " · Ollama не запущена — завантаження почнеться, коли вона запрацює" : " · сила 1–10 — наскільки модель розумна";
             modelsInfo.Text = pc + tail + " · показано " + shown.Count;
             modelList.Invalidate();
             modelsHost.Rearrange();

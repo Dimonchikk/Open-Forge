@@ -68,6 +68,9 @@ namespace OpenForge
 
         static string Gb(double v) { return v.ToString(v < 10 ? "0.0" : "0") + " ГБ"; }
 
+        // Колір сили: слабкі — сірувато-сині, середні — сині, найсильніші — фіолетові.
+        static Color PowerColor(int p) { return p >= 8 ? Ui.Purple : p >= 5 ? Ui.Blue : Ui.Mix(Ui.Blue, Ui.Ink3, 0.45f); }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = Prep(e);
@@ -150,19 +153,36 @@ namespace OpenForge
                 int x = left;
                 if (m.Known)
                 {
+                    // Чи потягне цей ПК: зелене — швидко, помаранчеве — повільніше, червоне — не потягне.
                     var fit = m.FitFor(VramGb, RamGb);
                     Color c = fit == Fit.Fast ? Ui.Green : fit == Fit.Slow ? Ui.Orange : Ui.Red;
                     string ft = !Hardware.Done ? "Визначаю, чи піде…" :
-                        fit == Fit.Fast ? "Швидко на твоєму ПК" : fit == Fit.Slow ? "Піде повільніше — частина в RAM" : "Замало пам'яті для цього ПК";
+                        fit == Fit.Fast ? "Швидко на твоєму ПК" : fit == Fit.Slow ? "Повільніше — частина в RAM" : "Не потягне твій ПК";
                     if (!Hardware.Done) c = Ui.Ink3;
                     float d = Ui.S(7);
                     using (var b = new SolidBrush(c)) g.FillEllipse(b, x, my + (Ui.S(18) - d) / 2f, d, d);
                     x += Ui.S(13);
                     int fw = TextRenderer.MeasureText(ft, Ui.Small, Size.Empty, TextFormatFlags.NoPadding).Width;
-                    Ui.Text(g, ft, Ui.Small, new Rectangle(x, my, Math.Min(fw + 2, textRight - x), Ui.S(18)), c, Ui.Left);
-                    x += fw + Ui.S(4);
+                    Ui.Text(g, ft, Ui.Small, new Rectangle(x, my, Math.Min(fw + 2, Math.Max(0, textRight - x)), Ui.S(18)), c, Ui.Left);
+                    x += fw + Ui.S(16);
+
+                    // Сила 1–10: десять рисочок і число.
+                    if (x + Ui.S(130) < textRight)
+                    {
+                        int pw = m.Power;
+                        Ui.Text(g, "Сила", Ui.Small, new Rectangle(x, my, Ui.S(40), Ui.S(18)), Ui.Ink2, Ui.Left);
+                        x += TextRenderer.MeasureText("Сила", Ui.Small, Size.Empty, TextFormatFlags.NoPadding).Width + Ui.S(6);
+                        int sw = Ui.S(5), sh = Ui.S(10), gap = Ui.S(2), sy = my + (Ui.S(18) - sh) / 2;
+                        for (int q = 0; q < 10; q++)
+                            Ui.FillRound(g, new Rectangle(x + q * (sw + gap), sy, sw, sh), Ui.S(1.5f), q < pw ? PowerColor(pw) : Ui.Fill);
+                        x += 10 * (sw + gap) + Ui.S(4);
+                        string pt = pw + "/10";
+                        Ui.Text(g, pt, Ui.BodySemi, new Rectangle(x, my - Ui.S(1), Ui.S(40), Ui.S(20)), Ui.Ink, Ui.Left);
+                        x += TextRenderer.MeasureText(pt, Ui.BodySemi, Size.Empty, TextFormatFlags.NoPadding).Width + Ui.S(12);
+                    }
                 }
-                string meta = (m.Known ? " · " : "") + Gb(m.SizeGb) + " · " + m.Id + (m.Installed ? "  ✓ встановлено" : "");
+                string need = m.Known ? "потрібно ~" + Gb(m.NeedGb) + " пам'яті · " : "";
+                string meta = (m.Known ? "· " : "") + need + m.Id + (m.Installed ? "  ✓ встановлено" : "");
                 Ui.Text(g, meta, Ui.Small, new Rectangle(x, my, Math.Max(0, textRight - x), Ui.S(18)), Ui.Ink3, Ui.Left);
             }
 

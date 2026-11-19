@@ -23,6 +23,41 @@ namespace OpenForge
         // Сильна в коді: розділ «Код» або позначка «код» (чат-моделі, що добре програмують).
         public bool Coder { get { return Category == "code" || Tags.Contains("код"); } }
 
+        // Скільки пам'яті (відеопам'ять + RAM) потрібно під час роботи: сама модель + ~1 ГБ на контекст.
+        public double NeedGb { get { return SizeGb + 1.0; } }
+
+        // Мільярди параметрів — з назви для Ollama («qwen3:8b», «gemma4:e4b», «qwen3:0.6b»), або з розміру файлу.
+        public double Params
+        {
+            get
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(Id ?? "", @":e?(\d+(?:\.\d+)?)[bB]\b");
+                double v;
+                if (m.Success && double.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) return v;
+                return SizeGb / 0.62;   // 4-бітна модель — приблизно 0,62 ГБ на мільярд параметрів
+            }
+        }
+
+        static readonly string[] NewGen = { "qwen3.5", "qwen3.6", "gemma4", "gemma-4", "gpt-oss", "qwen3-vl", "qwen3-coder", "devstral-small-2", "magistral",
+                                            "mistral-small3.2", "phi4-reasoning", "qwq" };
+        static readonly string[] OldGen = { "llama2", "wizard-vicuna", "dolphin-mistral", "llava", "dolphin-phi", "mistral:7b", "dolphin-llama3", "deepseek-coder-v2", "moondream" };
+
+        // Сила від 1 до 10: наскільки модель розумна. Головне — кількість параметрів; нові покоління трохи сильніші
+        // за свій розмір, старі — слабші; у MoE працює лише частина параметрів, тож вона трохи слабша за звичайну того ж розміру.
+        public int Power
+        {
+            get
+            {
+                double p = Params;
+                int s = p < 1 ? 1 : p < 2 ? 2 : p < 3.5 ? 3 : p < 6 ? 4 : p < 10 ? 5 : p < 16 ? 6 : p < 25 ? 7 : p < 34 ? 8 : p < 60 ? 9 : 10;
+                string id = (Id ?? "").ToLowerInvariant();
+                if (NewGen.Any(x => id.Contains(x))) s++;
+                if (OldGen.Any(x => id.Contains(x))) s--;
+                if (Moe) s--;
+                return Math.Max(1, Math.Min(10, s));
+            }
+        }
+
         // Як модель піде на цьому ПК:
         // Fast — повністю влазить у відеопам'ять (повна швидкість);
         // Slow — потрібні відеопам'ять і RAM разом (працює, але повільніше);
