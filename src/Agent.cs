@@ -418,6 +418,8 @@ namespace OpenForge
             // Потоком, як у чаті: думки й текст моделі видно одразу, а не лише після всієї відповіді
             // (на великій моделі один крок може тривати хвилини).
             var body = new Dictionary<string, object> { { "model", model }, { "messages", messages }, { "tools", Tools }, { "stream", true }, { "options", Ollama.Options() } };
+            var think = Ollama.ThinkValue(model);
+            if (think != null) body["think"] = think;
             byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
             var r = (HttpWebRequest)WebRequest.Create(Ollama.Host + "/api/chat");
             r.Method = "POST";

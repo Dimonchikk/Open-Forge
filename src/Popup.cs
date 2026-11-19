@@ -82,7 +82,7 @@ namespace OpenForge
             dd.Items.Add(host);
             dd.Size = menu.Size;
             menu.dd = dd;
-            dd.Closed += (s, e) => { var d = dd; try { owner.BeginInvoke((Action)(() => d.Dispose())); } catch { } };
+            // Закрите меню не знищуємо вручну — його прибере збирач сміття (явний Dispose ламав цикл повідомлень).
             dd.HandleCreated += (s, e) =>
             {
                 // Windows 11: справжні заокруглені кути з тінню; на Windows 10 просто нічого не станеться.

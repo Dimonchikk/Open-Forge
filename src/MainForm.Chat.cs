@@ -31,6 +31,8 @@ namespace OpenForge
         string agentFolder;
         AgentPermission agentPerm = AgentPermission.Auto;
         SidePanel sidePanel;
+        PillBtn thinkBtn;
+        string thinkAsked;   // для якої моделі вже питали Ollama, чи вона міркує
         RoundBtn panelBtn;
         readonly System.Windows.Forms.Timer panelTimer = new System.Windows.Forms.Timer { Interval = 700 };
         AgentRun agent;
@@ -74,6 +76,9 @@ namespace OpenForge
 
             modelBtn = new PillBtn { Icon = "models", OnBg = true, Text = "Модель" };
             modelBtn.Click += (s, e) => ShowModelMenu();
+            thinkBtn = new PillBtn { Icon = "spark", OnBg = true, Text = "Думати: авто", Visible = false };
+            thinkBtn.Click += (s, e) => ShowThinkMenu();
+            chatPage.Controls.Add(thinkBtn);
             chatPage.Controls.Add(modelBtn);
 
             // Бічна панель «Прогрес / Вивід / Використано» і кнопка, що її відкриває.
@@ -165,6 +170,8 @@ namespace OpenForge
             int col = Math.Min(Ui.S(780), w - Ui.S(48));
             int x = (w - col) / 2;
             modelBtn.Bounds = new Rectangle(x, Ui.S(2), Math.Min(Ui.S(320), modelBtn.Natural()), Ui.S(32));
+            UpdateThinkBtn();
+            if (thinkBtn.Visible) thinkBtn.Bounds = new Rectangle(modelBtn.Right + Ui.S(8), Ui.S(2), thinkBtn.Natural(), Ui.S(32));
 
             int ih = chatInput.Wanted;
             chatInput.Bounds = new Rectangle(x, h - ih - Ui.S(20), col, ih);
@@ -412,6 +419,62 @@ namespace OpenForge
         // ── розмова ─────────────────────────────────────────────────────────────
 
         bool Busy { get { return stream != null || agent != null; } }
+
+        static string ThinkLabel(string mode)
+        {
+            switch (mode)
+            {
+                case "off": return "ні";
+                case "on": return "так";
+                case "low": return "коротко";
+                case "medium": return "середньо";
+                case "high": return "глибоко";
+                default: return "авто";
+            }
+        }
+
+        // Кнопка «Думати» видна лише для моделей, що вміють міркувати. Чи вміє — питаємо Ollama у фоні.
+        void UpdateThinkBtn()
+        {
+            if (thinkBtn == null) return;
+            var info = Ollama.CachedThink(model);
+            if (info == null && !string.IsNullOrEmpty(model) && thinkAsked != model)
+            {
+                thinkAsked = model;
+                string m = model;
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    Ollama.Think(m);
+                    try { BeginInvoke((Action)LayoutChat); } catch { }
+                });
+            }
+            bool show = info != null ? info.Thinks : (Catalog.Find(model ?? "") != null && Catalog.Find(model).Thinks);
+            thinkBtn.Visible = show;
+            string mode = Ollama.ThinkMode;
+            if (info != null && info.Levels.Count == 0 && (mode == "low" || mode == "medium" || mode == "high")) mode = "on";
+            if (info != null && info.Levels.Count > 0 && mode == "on") mode = "auto";
+            thinkBtn.Text = "Думати: " + ThinkLabel(mode);
+            thinkBtn.Invalidate();
+        }
+
+        void ShowThinkMenu()
+        {
+            var info = Ollama.CachedThink(model) ?? new Ollama.ThinkInfo { Thinks = true };
+            string cur = Ollama.ThinkMode;
+            var items = new List<PopupItem>();
+            Action<string, string, string> add = (mode, text, sub) =>
+                items.Add(new PopupItem(text, cur == mode, () => { Settings.Set("ThinkMode", mode); LayoutChat(); }) { Sub = sub });
+            add("auto", "Авто", "як вирішить модель");
+            add("off", "Не думати", "відповідь одразу, найшвидше");
+            if (info.Levels.Count > 0)
+            {
+                if (info.Levels.Contains("low")) add("low", "Коротко", "трохи подумати");
+                if (info.Levels.Contains("medium")) add("medium", "Середньо", "");
+                if (info.Levels.Contains("high")) add("high", "Глибоко", "довго, для складних задач");
+            }
+            else add("on", "Думати", "ретельніше, але довше");
+            PopupMenu.Show(thinkBtn, items);
+        }
 
         bool PanelWanted { get { return Settings.GetInt("SidePanel", 0) == 1; } }
 

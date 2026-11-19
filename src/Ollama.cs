@@ -184,6 +184,83 @@ namespace OpenForge
             try { return Convert.ToInt64(v, System.Globalization.CultureInfo.InvariantCulture); } catch { return 0; }
         }
 
+        // ── міркування («Думати перед відповіддю») ──────────────────────────────
+
+        public class ThinkInfo
+        {
+            public bool Thinks;                               // модель уміє міркувати
+            public List<string> Levels = new List<string>();  // рівні (наприклад low/medium/high у GPT-OSS); порожньо — лише увімк./вимк.
+        }
+
+        static readonly Dictionary<string, ThinkInfo> thinkCache = new Dictionary<string, ThinkInfo>(StringComparer.OrdinalIgnoreCase);
+
+        public static ThinkInfo CachedThink(string model)
+        {
+            lock (thinkCache) { ThinkInfo t; return model != null && thinkCache.TryGetValue(model, out t) ? t : null; }
+        }
+
+        // Що вміє модель — з /api/show (capabilities і thinking.values). Якщо Ollama не відповіла — з каталогу.
+        public static ThinkInfo Think(string model)
+        {
+            if (string.IsNullOrEmpty(model)) return new ThinkInfo();
+            var cached = CachedThink(model);
+            if (cached != null) return cached;
+            var info = new ThinkInfo();
+            try
+            {
+                var req = Request("/api/show", "POST", 8000);
+                req.ContentType = "application/json";
+                byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(new Dictionary<string, object> { { "model", model } }));
+                using (var rs = req.GetRequestStream()) rs.Write(data, 0, data.Length);
+                Dictionary<string, object> d;
+                using (var resp = req.GetResponse())
+                using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
+                    d = Obj(Json.DeserializeObject(sr.ReadToEnd()));
+                object caps, th;
+                if (d != null && d.TryGetValue("capabilities", out caps) && caps is object[])
+                    foreach (object c in (object[])caps) if (Convert.ToString(c) == "thinking") info.Thinks = true;
+                if (d != null && d.TryGetValue("thinking", out th) && Obj(th) != null)
+                {
+                    object vals;
+                    if (Obj(th).TryGetValue("values", out vals) && vals is object[])
+                        foreach (object v in (object[])vals)
+                        {
+                            if (v is string) info.Levels.Add((string)v);
+                            else if (v is bool && (bool)v) info.Thinks = true;
+                        }
+                    if (info.Levels.Count > 0) info.Thinks = true;
+                }
+            }
+            catch
+            {
+                var c = Catalog.Find(model);
+                info.Thinks = c != null && c.Thinks;
+                if (model.IndexOf("gpt-oss", StringComparison.OrdinalIgnoreCase) >= 0) info.Levels.AddRange(new[] { "low", "medium", "high" });
+                return info;   // не кешуємо — спробуємо ще, коли Ollama запрацює
+            }
+            lock (thinkCache) thinkCache[model] = info;
+            return info;
+        }
+
+        // Режим з налаштувань: auto — як вирішить модель, off — не думати, on — думати, або рівень (low/medium/high).
+        public static string ThinkMode { get { return Settings.Get("ThinkMode", "auto"); } }
+
+        // Значення поля «think» для запиту (null — не надсилати).
+        public static object ThinkValue(string model)
+        {
+            string mode = ThinkMode;
+            if (mode == "auto") return null;
+            var info = CachedThink(model);
+            if (info == null || !info.Thinks) return null;   // модель не міркує — нічого не надсилаємо (інакше Ollama може відмовити)
+            if (mode == "off") return false;
+            if (info.Levels.Count > 0)
+            {
+                if (mode == "on") return null;
+                return info.Levels.Contains(mode) ? (object)mode : null;
+            }
+            return true;
+        }
+
         // Версія запущеної Ollama або null, якщо вона не відповідає.
         public static string Version()
         {
@@ -234,6 +311,8 @@ namespace OpenForge
                     msgs.Add(new Dictionary<string, object> { { "role", "system" }, { "content", system } });
                 foreach (var t in history) msgs.Add(t.ToJson());
                 var body = new Dictionary<string, object> { { "model", model }, { "messages", msgs }, { "stream", true }, { "options", Options() } };
+                var think = ThinkValue(model);
+                if (think != null) body["think"] = think;
                 byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
 
                 // Перша відповідь може йти довго (модель вантажиться у відеопам'ять), тож таймаут великий.
