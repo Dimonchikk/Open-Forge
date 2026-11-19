@@ -37,6 +37,8 @@ namespace OpenForge
         public double ThinkSec;      // скільки модель міркувала (0 — невідомо)
         public DateTime StartedAt = DateTime.UtcNow;
         public DateTime StepAt;      // коли агент востаннє щось зробив (для таймера поточного кроку)
+        public bool SlowHint;        // крок готується вже понад хвилину — показати пояснення
+        internal bool LayoutSlow;
         internal string Site;        // index.html, який зробив агент (для «Переглянути сайт»)
         internal bool SiteChecked;
 
@@ -387,11 +389,12 @@ namespace OpenForge
             int thinkKey = think.Length * 2 + (m.Streaming && m.InThink ? 1 : 0);
             string openKey = string.Join(",", m.OpenSteps.Select(x => x.ToString()).ToArray());
             int nDetails = m.StepDetails != null ? m.StepDetails.Count : 0;
-            if (openKey == m.LayoutOpen && nDetails == m.LayoutDetails && disp == m.LayoutDisp && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages &&
+            if (m.SlowHint == m.LayoutSlow && openKey == m.LayoutOpen && nDetails == m.LayoutDetails && disp == m.LayoutDisp && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages &&
                 thinkKey == m.LayoutThink && m.ThinkOpen == m.LayoutThinkOpen && nFiles == m.LayoutFiles) return;
             m.LayoutImages = nImg;
             m.LayoutFiles = nFiles;
             m.LayoutOpen = openKey;
+            m.LayoutSlow = m.SlowHint;
             m.LayoutDetails = nDetails;
             int stepNo = 0;
             bool waiting = disp.Length == 0 && m.Streaming && think.Length == 0;   // модель ще нічого не написала
@@ -571,7 +574,19 @@ namespace OpenForge
                 int mark = cur.IndexOf("  ");
                 bool finished = cur.Contains("  ✓") || cur.Contains("  ✗");
                 // Крок уже завершився — модель думає над наступним, а не «працює» над старим.
-                lastSteps.Summary = finished ? "Думає, що робити далі" : "Працює: " + (mark > 0 ? cur.Substring(0, mark) : cur);
+                lastSteps.Summary = finished ? NextStep : "Працює: " + (mark > 0 ? cur.Substring(0, mark) : cur);
+                // Довго немає нового кроку — пояснюємо, що відбувається (модель пише файл, а Ollama не показує його по ходу).
+                if (finished && m.SlowHint)
+                {
+                    int at = paras.IndexOf(lastSteps) + 1;
+                    while (at < paras.Count && paras[at].Step) at++;
+                    paras.Insert(at, new Para
+                    {
+                        Kind = Para.Text, Str = "Модель готує наступний крок — найчастіше пише код файлу, а його не видно, доки вона не допише. " +
+                                                 "На великій моделі це може тривати кілька хвилин. Швидше: «Думати → Не думати» або модель з позначкою «Швидко».",
+                        Start = 0, Thought = true, Indent = StepIndent,
+                    });
+                }
             }
             if (inCode)   // блок ще пишеться — закриваємо його візуально
             {
@@ -1338,10 +1353,12 @@ namespace OpenForge
         }
 
         // Рядок-підсумок, що «живе», поки агент працює: поточний крок і час.
+        const string NextStep = "Готує наступний крок";
+
         static bool IsLive(ChatMessage m, Para p)
         {
             if (p.Kind == Para.Think) return m.Streaming && m.InThink;
-            return m.Streaming && (p.Live || (p.Summary != null && (p.Summary.StartsWith("Працює: ") || p.Summary == "Думає, що робити далі")));
+            return m.Streaming && (p.Live || (p.Summary != null && (p.Summary.StartsWith("Працює: ") || p.Summary == NextStep)));
         }
 
         static string Dur(double sec)
