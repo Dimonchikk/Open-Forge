@@ -26,10 +26,12 @@ namespace OpenForge
         internal List<Bitmap> Thumbs;
         public bool Streaming;
         public bool StepsOpen;       // кроки агента розгорнуті
+        public DateTime StartedAt = DateTime.UtcNow;
 
         internal string Shown;
         internal int LayoutW = -1, Height, BubbleW;
         internal bool LayoutFoot, LayoutSteps;
+        internal int LayoutImages;
         internal readonly List<Para> Paras = new List<Para>();
 
         public ChatMessage(string role, string raw) { Role = role; Raw = raw ?? ""; }
@@ -241,13 +243,17 @@ namespace OpenForge
             string disp = m.Display;
             if (disp.Length == 0 && m.Streaming) disp = "Думає…";
             bool foot = HasFoot(m);
-            if (disp == m.Shown && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps) return;
+            int nImg = m.Images != null ? m.Images.Count : 0;
+            if (disp == m.Shown && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages) return;
+            m.LayoutImages = nImg;
 
             // 1. Розбити на абзаци: звичайні рядки й блоки коду між ``` (лише у відповідях моделі).
             var paras = new List<Para>();
             int imagesW = 0;
+            Para imagesPara = null;
             if (m.Images != null && m.Images.Count > 0)
             {
+                if (m.Thumbs != null && m.Thumbs.Count != m.Images.Count) { foreach (var t in m.Thumbs) t.Dispose(); m.Thumbs = null; }
                 if (m.Thumbs == null)
                 {
                     m.Thumbs = new List<Bitmap>();
@@ -259,7 +265,8 @@ namespace OpenForge
                     }
                 }
                 foreach (var t in m.Thumbs) imagesW += t.Width + Ui.S(6);
-                paras.Add(new Para { Kind = Para.Images, Str = "", Start = 0 });
+                imagesPara = new Para { Kind = Para.Images, Str = "", Start = 0 };
+                if (m.IsUser) paras.Add(imagesPara);   // у твоєму повідомленні — над текстом
             }
             bool parseCode = m.Role == "assistant";
             bool inCode = false;
@@ -315,6 +322,8 @@ namespace OpenForge
                 }
                 paras.Add(new Para { Kind = kind, Str = t, Start = off });
             }
+            if (imagesPara != null && !m.IsUser) paras.Add(imagesPara);   // скріншоти агента — під текстом
+
             // Підсумки груп кроків.
             Para lastSteps = null;
             foreach (var p in paras) if (p.Kind == Para.Steps) { p.Summary = StepsSummary(p.StepList); lastSteps = p; }
@@ -371,7 +380,7 @@ namespace OpenForge
         // «Створив файлів: 3 · виконав команд: 1 · помилок: 1»
         static string StepsSummary(List<string> list)
         {
-            int create = 0, read = 0, look = 0, cmd = 0, del = 0, fail = 0, other = 0;
+            int create = 0, read = 0, look = 0, cmd = 0, del = 0, fail = 0, other = 0, shot = 0, run = 0;
             foreach (string st in list)
             {
                 if (st.Contains("✗")) fail++;
@@ -380,6 +389,8 @@ namespace OpenForge
                 else if (st.StartsWith("Дивиться файли")) look++;
                 else if (st.StartsWith("Виконує команду")) cmd++;
                 else if (st.StartsWith("Видаляє")) del++;
+                else if (st.StartsWith("Робить скріншот") || st.StartsWith("Фотографує вікно")) shot++;
+                else if (st.StartsWith("Запускає програму")) run++;
                 else other++;
             }
             var parts = new List<string>();
@@ -388,6 +399,8 @@ namespace OpenForge
             if (look > 0) parts.Add("переглянув папку: " + look);
             if (cmd > 0) parts.Add("виконав команд: " + cmd);
             if (del > 0) parts.Add("видалив: " + del);
+            if (run > 0) parts.Add("запустив програм: " + run);
+            if (shot > 0) parts.Add("скріншотів: " + shot);
             if (other > 0) parts.Add("інших кроків: " + other);
             if (fail > 0) parts.Add("не вдалося: " + fail);
             string s = string.Join(" · ", parts.ToArray());
@@ -602,8 +615,19 @@ namespace OpenForge
                     var sr = StepsRect(v);
                     Ui.FillRound(g, sr, sr.Height / 2f, hoverObj == m && hoverKey == "steps" ? Ui.FillHover : Ui.Fill);
                     float ic = Ui.S(13);
-                    Icons.Draw(g, "folder", new RectangleF(sr.X + Ui.S(11), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink2);
-                    Ui.Text(g, p.Summary, Ui.Small, new Rectangle(sr.X + Ui.S(30), sr.Y, sr.Width - Ui.S(56), sr.Height), Ui.Ink2, Ui.Left);
+                    if (IsLive(m, p))
+                    {
+                        // Три крапки, що «дихають», — агент працює.
+                        int phase = (int)(DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond / 280 % 3);
+                        for (int k = 0; k < 3; k++)
+                        {
+                            float d = Ui.S(4);
+                            using (var b = new SolidBrush(Color.FromArgb(k == phase ? 255 : 90, Ui.Orange)))
+                                g.FillEllipse(b, sr.X + Ui.S(10) + k * Ui.S(6), sr.Y + (sr.Height - d) / 2f, d, d);
+                        }
+                    }
+                    else Icons.Draw(g, "folder", new RectangleF(sr.X + Ui.S(11), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink2);
+                    Ui.Text(g, SummaryText(m, p), Ui.Small, new Rectangle(sr.X + Ui.S(36), sr.Y, sr.Width - Ui.S(62), sr.Height), Ui.Ink2, Ui.Left);
                     Icons.Draw(g, m.StepsOpen ? "chevron" : "chevron-right", new RectangleF(sr.Right - Ui.S(22), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink3);
                     continue;
                 }
@@ -666,10 +690,20 @@ namespace OpenForge
             Icons.Draw(g, "arrow-down", new RectangleF(r.X + (r.Width - s) / 2f, r.Y + (r.Height - s) / 2f, s, s), Ui.Ink);
         }
 
+        // Рядок-підсумок, що «живе», поки агент працює: поточний крок і час.
+        static bool IsLive(ChatMessage m, Para p) { return m.Streaming && p.Summary != null && p.Summary.StartsWith("Працює: "); }
+
+        static string SummaryText(ChatMessage m, Para p)
+        {
+            if (!IsLive(m, p)) return p.Summary ?? "";
+            int sec = (int)(DateTime.UtcNow - m.StartedAt).TotalSeconds;
+            return p.Summary + "   " + (sec >= 60 ? sec / 60 + " хв " + sec % 60 + " с" : sec + " с");
+        }
+
         Rectangle StepsRect(PV v)
         {
-            int tw = TextRenderer.MeasureText(v.P.Summary ?? "", Ui.Small, Size.Empty, NF).Width;
-            return new Rectangle(v.X, v.Y + Ui.S(4), Math.Min(v.W, tw + Ui.S(62)), Ui.S(28));
+            int tw = TextRenderer.MeasureText(SummaryText(v.M, v.P), Ui.Small, Size.Empty, NF).Width;
+            return new Rectangle(v.X, v.Y + Ui.S(4), Math.Min(v.W, tw + Ui.S(68)), Ui.S(28));
         }
 
         void PaintFoot(Graphics g, ChatMessage m, Rectangle r)

@@ -86,7 +86,7 @@ namespace OpenForge
         {
             if (permission == AgentPermission.Full) return false;
             if (permission == AgentPermission.Manual) return true;
-            return tool == "run_command" || tool == "delete_file";
+            return tool == "run_command" || tool == "delete_file" || tool == "start_program";
         }
 
         string SafePath(string rel)
@@ -131,6 +131,15 @@ namespace OpenForge
             Tool("run_command", "Run a shell command in the project folder (Windows cmd). Use for installing packages, running scripts, tests.",
                 new Dictionary<string, object> { { "command", Str(null) } }, "command"),
             Tool("delete_file", "Delete a file from the project folder.", new Dictionary<string, object> { { "path", Str(null) } }, "path"),
+            Tool("screenshot_page", "Take a screenshot of a web page or local HTML file (rendered in a headless browser) to check how it looks. " +
+                 "The screenshot is shown to the user and, if you can see images, to you.",
+                new Dictionary<string, object> { { "target", Str("Path to an .html file in the project folder, or an http(s) URL (e.g. http://localhost:5173).") },
+                                                 { "width", new Dictionary<string, object> { { "type", "integer" }, { "description", "Viewport width in px (default 1280; use 390 for a phone)." } } } }, "target"),
+            Tool("start_program", "Start a program or server in the project folder WITHOUT waiting for it to finish (e.g. a GUI app or 'npm run dev'). " +
+                 "Use screenshot_window afterwards to see a GUI app.",
+                new Dictionary<string, object> { { "command", Str(null) } }, "command"),
+            Tool("screenshot_window", "Take a screenshot of an open window whose title contains the given text (e.g. a program you started).",
+                new Dictionary<string, object> { { "title", Str("Part of the window title.") } }, "title"),
         };
 
         static string Arg(Dictionary<string, object> a, string key)
@@ -148,6 +157,9 @@ namespace OpenForge
                 case "list_files": return "Дивиться файли" + (Arg(a, "subdir").Length > 0 ? " у " + Arg(a, "subdir") : " в папці");
                 case "run_command": return "Виконує команду: " + Arg(a, "command");
                 case "delete_file": return "Видаляє " + Arg(a, "path");
+                case "screenshot_page": return "Робить скріншот " + Arg(a, "target");
+                case "start_program": return "Запускає програму: " + Arg(a, "command");
+                case "screenshot_window": return "Фотографує вікно «" + Arg(a, "title") + "»";
             }
             return name;
         }
@@ -193,6 +205,20 @@ namespace OpenForge
                             return true;
                         }
                     case "run_command": return RunCommand(Arg(a, "command"), out result);
+                    case "screenshot_page": return ShotPage(Arg(a, "target"), Arg(a, "width"), out result);
+                    case "screenshot_window": return ShotWindow(Arg(a, "title"), out result);
+                    case "start_program":
+                        {
+                            var psi = new ProcessStartInfo("cmd.exe", "/d /c \"" + Arg(a, "command") + "\"");
+                            psi.WorkingDirectory = root;
+                            psi.UseShellExecute = false;
+                            psi.CreateNoWindow = true;
+                            var sp = Process.Start(psi);
+                            started.Add(sp);
+                            Thread.Sleep(2500);   // дати програмі відкрити вікно / серверу піднятися
+                            result = sp.HasExited ? "програма вже завершилась (код " + sp.ExitCode + ")" : "запущено (працює у фоні)";
+                            return !sp.HasExited || sp.ExitCode == 0;
+                        }
                     case "delete_file":
                         File.Delete(SafePath(Arg(a, "path")));
                         Changed.Add(Arg(a, "path"));
@@ -237,6 +263,113 @@ namespace OpenForge
                 result = (o.Length > 0 ? o : "(без виводу)") + "\n[код виходу " + p.ExitCode + "]";
                 return p.ExitCode == 0;
             }
+        }
+
+        // ── скріншоти ────────────────────────────────────────────────────────────
+
+        public bool ModelSeesImages = true;            // false — модель точно не бачить картинок
+        readonly List<string> shots = new List<string>();
+        readonly List<Process> started = new List<Process>();
+        string pendingShot;                             // картинка, яку треба показати моделі після відповіді інструмента
+        int shotsVersion;
+
+        // Скріншоти, зроблені агентом (для показу в чаті).
+        public List<string> Shots(ref int seenVersion)
+        {
+            lock (sync)
+            {
+                if (seenVersion == shotsVersion) return null;
+                seenVersion = shotsVersion;
+                return new List<string>(shots);
+            }
+        }
+
+        void AddShot(string b64)
+        {
+            lock (sync) { shots.Add(b64); shotsVersion++; }
+            pendingShot = b64;
+        }
+
+        static string FindBrowser()
+        {
+            string env = Environment.GetEnvironmentVariable("OPENFORGE_BROWSER");
+            if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;
+            var dirs = new[] { Environment.GetEnvironmentVariable("ProgramFiles(x86)"), Environment.GetEnvironmentVariable("ProgramFiles"),
+                               Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) };
+            foreach (string rel in new[] { "Microsoft\\Edge\\Application\\msedge.exe", "Google\\Chrome\\Application\\chrome.exe" })
+                foreach (string d in dirs)
+                    if (!string.IsNullOrEmpty(d) && File.Exists(Path.Combine(d, rel))) return Path.Combine(d, rel);
+            return null;
+        }
+
+        bool ShotPage(string target, string widthArg, out string result)
+        {
+            string browser = FindBrowser();
+            if (browser == null) { result = "не знайдено Microsoft Edge чи Chrome для скріншота"; return false; }
+            string url = target.Trim();
+            if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                !url.StartsWith("file:", StringComparison.OrdinalIgnoreCase))
+            {
+                string path = SafePath(url);
+                if (!File.Exists(path)) { result = "файл не знайдено: " + target; return false; }
+                url = new Uri(path).AbsoluteUri;
+            }
+            int width;
+            if (!int.TryParse(widthArg, out width) || width < 320 || width > 2560) width = 1280;
+            int height = width <= 500 ? 844 : 800;
+            string png = Path.Combine(Path.GetTempPath(), "openforge_shot_" + Guid.NewGuid().ToString("N") + ".png");
+            string profile = Path.Combine(Path.GetTempPath(), "openforge_browser");
+            var psi = new ProcessStartInfo(browser, "--headless=new --disable-gpu --hide-scrollbars --no-first-run --user-data-dir=\"" + profile +
+                "\" --window-size=" + width + "," + height + " --screenshot=\"" + png + "\" \"" + url + "\"");
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardError = psi.RedirectStandardOutput = true;
+            using (var p = Process.Start(psi))
+            {
+                p.ErrorDataReceived += (s, e) => { };
+                p.OutputDataReceived += (s, e) => { };
+                p.BeginErrorReadLine();
+                p.BeginOutputReadLine();
+                if (!p.WaitForExit(45000)) try { p.Kill(); } catch { }
+            }
+            string b64 = File.Exists(png) ? Pictures.FromFile(png) : null;
+            try { File.Delete(png); } catch { }
+            if (b64 == null) { result = "не вдалося зробити скріншот " + target; return false; }
+            AddShot(b64);
+            result = "скріншот зроблено (" + width + "×" + height + ") і показано користувачу" + (ModelSeesImages ? "; зображення надіслано тобі наступним повідомленням" : "");
+            return true;
+        }
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hwnd, IntPtr hdc, uint flags);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
+
+        bool ShotWindow(string title, out string result)
+        {
+            Process found = null;
+            foreach (var p in Process.GetProcesses())
+            {
+                try
+                {
+                    if (p.MainWindowHandle != IntPtr.Zero && p.MainWindowTitle.IndexOf(title, StringComparison.OrdinalIgnoreCase) >= 0) { found = p; break; }
+                }
+                catch { }
+            }
+            if (found == null) { result = "вікно з назвою «" + title + "» не знайдено"; return false; }
+            RECT r;
+            if (!GetWindowRect(found.MainWindowHandle, out r) || r.R - r.L < 10 || r.B - r.T < 10) { result = "вікно згорнуте або порожнє"; return false; }
+            using (var bmp = new System.Drawing.Bitmap(r.R - r.L, r.B - r.T))
+            {
+                using (var g = System.Drawing.Graphics.FromImage(bmp))
+                {
+                    IntPtr hdc = g.GetHdc();
+                    try { PrintWindow(found.MainWindowHandle, hdc, 2); }   // 2 — PW_RENDERFULLCONTENT: працює й для сучасних вікон
+                    finally { g.ReleaseHdc(hdc); }
+                }
+                AddShot(Pictures.Encode(bmp));
+            }
+            result = "знімок вікна «" + found.MainWindowTitle + "» зроблено й показано користувачу" + (ModelSeesImages ? "; зображення надіслано тобі наступним повідомленням" : "");
+            return true;
         }
 
         // ── цикл ─────────────────────────────────────────────────────────────────
@@ -286,7 +419,9 @@ namespace OpenForge
                 string system = "You are a coding agent working on the user's Windows computer inside ONE project folder. " +
                     "Use the tools to actually create and edit files and run commands — do not just print code. " +
                     "Paths are relative to the project folder. Work step by step, check results, and when the task is finished " +
-                    "reply with a short summary of what you did, in the user's language.\nProject folder: " + root;
+                    "reply with a short summary of what you did, in the user's language.\n" +
+                    "After you build or change a web page, call screenshot_page to check how it looks" + (ModelSeesImages ? " and fix what looks wrong" : "") + ". " +
+                    "For a desktop app, use start_program and then screenshot_window.\nProject folder: " + root;
                 if (!string.IsNullOrEmpty(instruction) && instruction.Trim().Length > 0) system += "\n\nUser instruction: " + instruction;
                 var messages = new List<object> { new Dictionary<string, object> { { "role", "system" }, { "content", system } } };
                 foreach (var t in history) messages.Add(t.ToJson());
@@ -330,6 +465,9 @@ namespace OpenForge
                         if (first.Length > 140) first = first.Substring(0, 140) + "…";
                         Write(ok ? "  ✓" + (name == "run_command" ? "  " + first : "") : "  ✗ " + first);
                         messages.Add(new Dictionary<string, object> { { "role", "tool" }, { "content", result }, { "tool_name", name } });
+                        if (pendingShot != null && ModelSeesImages)   // показати моделі, що вийшло
+                            messages.Add(new Turn("user", "Ось скріншот результату (" + title + "). Перевір, чи все виглядає правильно.") { Images = new List<string> { pendingShot } }.ToJson());
+                        pendingShot = null;
                     }
                 }
                 Write("\n\nЗупинився: досягнуто ліміту кроків (" + MaxSteps + ").");

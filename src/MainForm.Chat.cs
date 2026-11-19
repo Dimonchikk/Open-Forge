@@ -28,6 +28,7 @@ namespace OpenForge
         string agentFolder;
         AgentPermission agentPerm = AgentPermission.Auto;
         AgentRun agent;
+        int shotsSeen;
 
         ChatStream stream;
         ChatMessage answer;
@@ -455,6 +456,8 @@ namespace OpenForge
                 history.RemoveAt(history.Count - 1);
                 var run = new AgentRun(agentFolder, model, agentPerm, history, Settings.Get("SystemPrompt", ""));
                 run.TaskImages = images;
+                run.ModelSeesImages = ModelSeesImages(model) != false;
+                shotsSeen = 0;
                 run.Confirm = AskAgentPermission;
                 agent = run;
                 answer.Folder = run.Folder;
@@ -495,7 +498,10 @@ namespace OpenForge
         {
             var run = agent;
             string t = run.TakeIfChanged(ref seen);
-            if (t != null) { answer.Raw = t; chatList.Changed(answer); }
+            var shots = run.Shots(ref shotsSeen);
+            if (shots != null) answer.Images = shots;
+            if (t != null || shots != null) { if (t != null) answer.Raw = t; chatList.Changed(answer); }
+            else chatList.Invalidate();   // крапки й таймер у рядку кроків
             if (!run.Done) return;
             agent = null;
             pump.Stop();
