@@ -11,6 +11,7 @@ namespace OpenForge
     {
         List<ChatEntry> items = new List<ChatEntry>();
         public string Selected;
+        public string EmptyText;   // що писати, коли список порожній (null — підказка для першого запуску)
         int offset, hover = -1;
         public event Action<string> Open, Rename, Delete;
 
@@ -75,7 +76,7 @@ namespace OpenForge
             g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
             if (items.Count == 0)
             {
-                TextRenderer.DrawText(g, "Тут з'являтимуться твої чати — кожна розмова зберігається сама.", Ui.Small,
+                TextRenderer.DrawText(g, EmptyText ?? "Тут з'являтимуться твої чати — кожна розмова зберігається сама.", Ui.Small,
                     new Rectangle(Ui.S(14), Ui.S(8), Width - Ui.S(28), Ui.S(60)), Ui.Ink3, TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
                 return;
             }

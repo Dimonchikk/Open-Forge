@@ -139,6 +139,32 @@ namespace OpenForge
                         g.DrawEllipse(pen, x + s * 0.08f, y + s * 0.08f, s * 0.84f, s * 0.84f);
                         g.DrawLines(pen, new[] { P(x, y, s, 0.5f, 0.24f), P(x, y, s, 0.5f, 0.5f), P(x, y, s, 0.68f, 0.62f) });
                         break;
+                    case "trash":     // кошик
+                        g.DrawLine(pen, P(x, y, s, 0.12f, 0.24f), P(x, y, s, 0.88f, 0.24f));
+                        g.DrawLines(pen, new[] { P(x, y, s, 0.36f, 0.24f), P(x, y, s, 0.4f, 0.1f), P(x, y, s, 0.6f, 0.1f), P(x, y, s, 0.64f, 0.24f) });
+                        g.DrawLines(pen, new[] { P(x, y, s, 0.22f, 0.24f), P(x, y, s, 0.27f, 0.9f), P(x, y, s, 0.73f, 0.9f), P(x, y, s, 0.78f, 0.24f) });
+                        break;
+                    case "refresh":   // стрілка по колу — «ще раз»
+                        g.DrawArc(pen, x + s * 0.12f, y + s * 0.12f, s * 0.76f, s * 0.76f, -60, 300);
+                        g.DrawLines(pen, new[] { P(x, y, s, 0.64f, 0.1f), P(x, y, s, 0.7f, 0.2f), P(x, y, s, 0.58f, 0.27f) });
+                        break;
+                    case "eye":       // перегляд
+                        using (var p = new GraphicsPath())
+                        {
+                            p.AddBezier(P(x, y, s, 0.04f, 0.5f), P(x, y, s, 0.3f, 0.12f), P(x, y, s, 0.7f, 0.12f), P(x, y, s, 0.96f, 0.5f));
+                            p.AddBezier(P(x, y, s, 0.96f, 0.5f), P(x, y, s, 0.7f, 0.88f), P(x, y, s, 0.3f, 0.88f), P(x, y, s, 0.04f, 0.5f));
+                            g.DrawPath(pen, p);
+                        }
+                        g.DrawEllipse(pen, x + s * 0.37f, y + s * 0.37f, s * 0.26f, s * 0.26f);
+                        break;
+                    case "file":      // аркуш із загнутим кутом
+                        g.DrawLines(pen, new[] { P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.2f, 0.06f), P(x, y, s, 0.2f, 0.94f), P(x, y, s, 0.8f, 0.94f),
+                            P(x, y, s, 0.8f, 0.26f), P(x, y, s, 0.6f, 0.06f), P(x, y, s, 0.6f, 0.26f), P(x, y, s, 0.8f, 0.26f) });
+                        break;
+                    case "search":    // лупа
+                        g.DrawEllipse(pen, x + s * 0.1f, y + s * 0.1f, s * 0.56f, s * 0.56f);
+                        g.DrawLine(pen, P(x, y, s, 0.6f, 0.6f), P(x, y, s, 0.9f, 0.9f));
+                        break;
                     case "half":
                         g.DrawEllipse(pen, x + s * 0.08f, y + s * 0.08f, s * 0.84f, s * 0.84f);
                         g.FillPie(brush, x + s * 0.08f, y + s * 0.08f, s * 0.84f, s * 0.84f, 90, 180);
@@ -168,6 +194,13 @@ namespace OpenForge
             set { list = value; Controls.Add(value); OnResize(EventArgs.Empty); }
         }
 
+        // Пошук у чатах — над списком (замість підпису «ЧАТИ»).
+        Control search;
+        public Control Search
+        {
+            set { search = value; Controls.Add(value); OnResize(EventArgs.Empty); }
+        }
+
         Rectangle ItemRect(int i)
         {
             int y = i == 0 ? Ui.S(84) : Height - Ui.S(update != null ? 132 : 84);
@@ -176,7 +209,7 @@ namespace OpenForge
 
         Rectangle ButtonRect { get { return new Rectangle(Ui.S(14), Height - Ui.S(52), Width - Ui.S(28), Ui.S(36)); } }
         bool ShowButton { get { return update != null; } }
-        int ListTop { get { return Ui.S(150); } }
+        int ListTop { get { return Ui.S(search != null ? 172 : 150); } }
 
         // Показники навантаження ПК — над «Налаштуваннями» (ховаються, якщо вікно надто низьке).
         const int MeterH = 27;
@@ -188,6 +221,7 @@ namespace OpenForge
         {
             base.OnResize(e);
             if (list != null) list.Bounds = new Rectangle(Ui.S(4), ListTop, Width - Ui.S(6), Math.Max(0, ListBottom - ListTop));
+            if (search != null) search.Bounds = new Rectangle(Ui.S(12), Ui.S(128), Width - Ui.S(24), Ui.S(36));
             Invalidate();
         }
 
@@ -250,7 +284,7 @@ namespace OpenForge
                 using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale)))
                     g.DrawLine(pen, Ui.S(16), MetersTop - Ui.S(10), Width - Ui.S(16), MetersTop - Ui.S(10));
             }
-            Ui.Text(g, "ЧАТИ", Ui.Caps, new Rectangle(Ui.S(24), Ui.S(130), Width - Ui.S(40), Ui.S(16)), Ui.Ink3, Ui.Left);
+            if (search == null) Ui.Text(g, "ЧАТИ", Ui.Caps, new Rectangle(Ui.S(24), Ui.S(130), Width - Ui.S(40), Ui.S(16)), Ui.Ink3, Ui.Left);
             using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale)))
                 g.DrawLine(pen, Ui.S(16), ItemRect(1).Y - Ui.S(6), Width - Ui.S(16), ItemRect(1).Y - Ui.S(6));
 

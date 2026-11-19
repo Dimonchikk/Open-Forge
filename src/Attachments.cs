@@ -102,10 +102,11 @@ namespace OpenForge
         }
     }
 
-    // Смужка доданих (ще не надісланих) картинок над полем вводу: мініатюри з хрестиком.
+    // Смужка доданих (ще не надісланих) картинок і файлів над полем вводу: мініатюри й картки файлів з хрестиком.
     class AttachStrip : UiControl
     {
         public readonly List<string> Images = new List<string>();
+        public readonly List<FileAttachment> Files = new List<FileAttachment>();
         readonly List<Bitmap> thumbs = new List<Bitmap>();
         int hover = -1;
         public event Action Changed;
@@ -113,6 +114,7 @@ namespace OpenForge
         public AttachStrip() { OnBg = true; }
 
         int Size1 { get { return Ui.S(56); } }
+        public int Count { get { return Images.Count + Files.Count; } }
 
         public bool Add(string b64)
         {
@@ -126,29 +128,67 @@ namespace OpenForge
             return true;
         }
 
+        public bool AddFile(FileAttachment f)
+        {
+            if (f == null || Files.Count >= FileText.MaxPerMessage) return false;
+            Files.Add(f);
+            Invalidate();
+            if (Changed != null) Changed();
+            return true;
+        }
+
         public void Clear()
         {
             Images.Clear();
+            Files.Clear();
             foreach (var t in thumbs) t.Dispose();
             thumbs.Clear();
             Invalidate();
             if (Changed != null) Changed();
         }
 
-        Rectangle Item(int i) { return new Rectangle(i * (Size1 + Ui.S(8)), Ui.S(4), Size1, Size1); }
+        int FileW(int i) { return Math.Min(Ui.S(240), Math.Max(Ui.S(190), TextRenderer.MeasureText(Files[i].Name, Ui.BodySemi).Width + Ui.S(62))); }
+
+        // i < Images.Count — картинка, далі — файли.
+        Rectangle Item(int i)
+        {
+            int x = 0;
+            for (int k = 0; k < i; k++) x += (k < Images.Count ? Size1 : FileW(k - Images.Count)) + Ui.S(8);
+            return new Rectangle(x, Ui.S(4), i < Images.Count ? Size1 : FileW(i - Images.Count), Size1);
+        }
         Rectangle Close(int i) { var r = Item(i); int d = Ui.S(18); return new Rectangle(r.Right - d + Ui.S(4), r.Y - Ui.S(4), d, d); }
+
+        static string Kind(string name)
+        {
+            string ext = System.IO.Path.GetExtension(name).TrimStart('.').ToUpperInvariant();
+            return ext.Length > 0 ? ext : "Файл";
+        }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = Prep(e);
-            for (int i = 0; i < thumbs.Count; i++)
+            for (int i = 0; i < Count; i++)
             {
                 var r = Item(i);
                 using (var path = Ui.Round(r, Ui.S(10)))
                 {
-                    g.SetClip(path);
-                    g.DrawImage(thumbs[i], r.X + (r.Width - thumbs[i].Width) / 2, r.Y);
-                    g.ResetClip();
+                    if (i < Images.Count)
+                    {
+                        g.SetClip(path);
+                        g.DrawImage(thumbs[i], r.X + (r.Width - thumbs[i].Width) / 2, r.Y);
+                        g.ResetClip();
+                    }
+                    else
+                    {
+                        var f = Files[i - Images.Count];
+                        using (var b = new SolidBrush(Ui.Card)) g.FillPath(b, path);
+                        var ic = new Rectangle(r.X + Ui.S(10), r.Y + Ui.S(12), Ui.S(32), Ui.S(32));
+                        Ui.FillRound(g, ic, Ui.S(8), Ui.Mix(Ui.Card, Ui.Blue, 0.14f));
+                        Icons.Draw(g, "file", RectangleF.Inflate(ic, -Ui.S(8), -Ui.S(8)), Ui.Blue);
+                        Ui.Text(g, f.Name, Ui.BodySemi, new Rectangle(r.X + Ui.S(50), r.Y + Ui.S(9), r.Width - Ui.S(58), Ui.S(20)), Ui.Ink, Ui.Left);
+                        string info = Kind(f.Name) + " · " + (f.Chars >= 1000 ? (f.Chars / 1000) + " тис. символів" : f.Chars + " символів");
+                        Ui.Text(g, info, Ui.Caps, new Rectangle(r.X + Ui.S(50), r.Y + Ui.S(29), r.Width - Ui.S(58), Ui.S(18)), Ui.Ink3, Ui.Left);
+                    }
                     using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale))) g.DrawPath(pen, path);
                 }
                 var c = Close(i);
@@ -161,7 +201,7 @@ namespace OpenForge
         {
             base.OnMouseMove(e);
             int h = -1;
-            for (int i = 0; i < thumbs.Count; i++) if (Close(i).Contains(e.Location)) h = i;
+            for (int i = 0; i < Count; i++) if (Close(i).Contains(e.Location)) h = i;
             if (h != hover) { hover = h; Invalidate(); }
             Cursor = h >= 0 ? Cursors.Hand : Cursors.Default;
         }
@@ -169,12 +209,16 @@ namespace OpenForge
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
-            for (int i = 0; i < thumbs.Count; i++)
+            for (int i = 0; i < Count; i++)
                 if (Close(i).Contains(e.Location))
                 {
-                    Images.RemoveAt(i);
-                    thumbs[i].Dispose();
-                    thumbs.RemoveAt(i);
+                    if (i < Images.Count)
+                    {
+                        Images.RemoveAt(i);
+                        thumbs[i].Dispose();
+                        thumbs.RemoveAt(i);
+                    }
+                    else Files.RemoveAt(i - Images.Count);
                     hover = -1;
                     Invalidate();
                     if (Changed != null) Changed();

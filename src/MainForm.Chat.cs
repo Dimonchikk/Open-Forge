@@ -21,7 +21,10 @@ namespace OpenForge
         HistoryList historyList;
         string chatId, chatTitle;   // поточний чат в історії (null — ще не збережений)
         readonly System.Windows.Forms.Timer speakTimer = new System.Windows.Forms.Timer { Interval = 250 };
-        PillBtn agentChip;
+        PillBtn agentChip, editChip;
+        RoundBtn editOffBtn;
+        ChatMessage editing;          // повідомлення, яке зараз редагуєш (null — пишеш нове)
+        InputBox historySearch;
         string model;
 
         // Агент: якщо обрано папку, повідомлення йдуть агенту, який працює з файлами в ній.
@@ -40,9 +43,14 @@ namespace OpenForge
             chatPage = new UiControl { OnBg = true };
             model = Settings.Get("Model", "");
 
-            chatList = new MessageList();
+            chatList = new MessageList { Editable = true };
             chatPage.Controls.Add(chatList);
             chatList.Speak += SpeakMessage;
+            chatList.EditMessage += StartEdit;
+            chatList.DeleteMessage += DeleteMessage;
+            chatList.Regenerate += Regenerate;
+            chatList.PreviewHtml += code => Preview.OpenHtml(this, code);
+            chatList.PreviewFile += path => Preview.OpenFile(this, path);
 
             historyList = new HistoryList();
             historyList.Open += id => { ShowPage(0); OpenChat(id); };
@@ -50,6 +58,10 @@ namespace OpenForge
             historyList.Delete += DeleteChat;
             historyList.SetItems(ChatStore.All());
             sidebar.List = historyList;   // список чатів — у боковому меню під «Новим чатом»
+            historySearch = new InputBox { Around = () => Ui.Side };
+            historySearch.Box.Hint = "Пошук у чатах";
+            historySearch.Box.TextChanged += (s, e) => RefreshHistory();
+            sidebar.Search = historySearch;
             speakTimer.Tick += (s, e) =>
             {
                 chatList.Invalidate();
@@ -79,22 +91,30 @@ namespace OpenForge
             folderBtn.Click += (s, e) => AgentSetup();
             chatInput.Controls.Add(folderBtn);
 
-            // Картинки: кнопка, Ctrl+V зі скріншотом, перетягування файлів.
-            imageBtn = new RoundBtn { Icon = "image", Outline = true, Bg = () => Ui.Card };
-            imageBtn.Tip = "Додати фото чи скріншот (або Ctrl+V, або перетягни файл)";
-            imageBtn.Click += (s, e) => PickImages();
+            // Фото й файли: кнопка «+», Ctrl+V зі скріншотом чи файлами, перетягування.
+            imageBtn = new RoundBtn { Icon = "plus", Outline = true, Bg = () => Ui.Card };
+            imageBtn.Tip = "Додати фото, скріншот або файл — PDF, Word, текст, код (або Ctrl+V, або перетягни)";
+            imageBtn.Click += (s, e) => PickFiles();
             chatInput.Controls.Add(imageBtn);
             attach = new AttachStrip();
             attach.Changed += LayoutChat;
             chatPage.Controls.Add(attach);
             chatInput.Box.ImagePasted += img => AddImage(Pictures.Encode(img));
-            chatInput.Box.FilesPasted += AddImageFiles;
+            chatInput.Box.FilesPasted += AddFiles;
             foreach (Control c in new Control[] { chatList, chatInput, chatInput.Box, chatPage })
             {
                 c.AllowDrop = true;
-                c.DragEnter += (s, e) => e.Effect = DroppedImages(e.Data).Length > 0 ? DragDropEffects.Copy : DragDropEffects.None;
-                c.DragDrop += (s, e) => AddImageFiles(DroppedImages(e.Data));
+                c.DragEnter += (s, e) => e.Effect = DroppedFiles(e.Data).Length > 0 ? DragDropEffects.Copy : DragDropEffects.None;
+                c.DragDrop += (s, e) => AddFiles(DroppedFiles(e.Data));
             }
+
+            editChip = new PillBtn { Icon = "new", OnBg = true, Text = "Редагуєш повідомлення — Enter надішле його заново", FillColor = () => Ui.Mix(Ui.Bg, Ui.Orange, 0.14f), Fore = () => Ui.Ink };
+            chatPage.Controls.Add(editChip);
+            editOffBtn = new RoundBtn { Icon = "x", Bg = () => Ui.Bg };
+            editOffBtn.Tip = "Скасувати редагування";
+            editOffBtn.Click += (s, e) => { SetEditing(null); chatInput.Box.Clear(); attach.Clear(); };
+            chatPage.Controls.Add(editOffBtn);
+            editChip.Visible = editOffBtn.Visible = false;
 
             agentChip = new PillBtn { Icon = "folder", OnBg = true, FillColor = () => Ui.Mix(Ui.Bg, Ui.Blue, 0.13f), Fore = () => Ui.Blue };
             agentChip.Click += (s, e) => AgentSetup();
@@ -132,7 +152,7 @@ namespace OpenForge
             chatInput.Relayout();
 
             int listBottom = chatInput.Top - Ui.S(8);
-            attach.Visible = attach.Images.Count > 0;
+            attach.Visible = attach.Count > 0;
             if (attach.Visible)
             {
                 attach.Bounds = new Rectangle(x, listBottom - Ui.S(66), col, Ui.S(66));
@@ -146,31 +166,74 @@ namespace OpenForge
                 agentOffBtn.Bounds = new Rectangle(agentChip.Right + Ui.S(6), agentChip.Top, ch, ch);
                 listBottom = agentChip.Top - Ui.S(6);
             }
+            editChip.Visible = editOffBtn.Visible = editing != null;
+            if (editing != null)
+            {
+                int cw = Math.Min(col - Ui.S(40), editChip.Natural()), ch = Ui.S(30);
+                editChip.Bounds = new Rectangle(x, listBottom - ch, cw, ch);
+                editOffBtn.Bounds = new Rectangle(editChip.Right + Ui.S(6), editChip.Top, ch, ch);
+                listBottom = editChip.Top - Ui.S(6);
+            }
             chatList.Bounds = new Rectangle(0, Ui.S(42), w, Math.Max(0, listBottom - Ui.S(42)));
         }
 
         // ── картинки ────────────────────────────────────────────────────────────
 
-        static string[] DroppedImages(IDataObject data)
+        static string[] DroppedFiles(IDataObject data)
         {
             try
             {
                 if (!data.GetDataPresent(DataFormats.FileDrop)) return new string[0];
-                return ((string[])data.GetData(DataFormats.FileDrop)).Where(Pictures.IsImageFile).ToArray();
+                return ((string[])data.GetData(DataFormats.FileDrop)).Where(f => Pictures.IsImageFile(f) || FileText.CanRead(f)).ToArray();
             }
             catch { return new string[0]; }
         }
 
-        void PickImages()
+        void PickFiles()
         {
-            using (var d = new OpenFileDialog { Filter = Pictures.DialogFilter, Multiselect = true, Title = "Фото чи скріншот для моделі" })
-                if (d.ShowDialog(this) == DialogResult.OK) AddImageFiles(d.FileNames);
+            string filter = "Фото й документи|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp;*.pdf;*.docx;*.txt;*.md;*.csv;*.json;*.html;*.css;*.js;*.py;*.cs|" +
+                            "Зображення|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp|" + FileText.DialogFilter;
+            using (var d = new OpenFileDialog { Filter = filter, Multiselect = true, Title = "Фото, скріншот або файл для моделі" })
+                if (d.ShowDialog(this) == DialogResult.OK) AddFiles(d.FileNames);
             chatInput.Box.Focus();
         }
 
-        void AddImageFiles(string[] files)
+        // Картинки — одразу; документи читаються у фоні (великий PDF може читатися кілька секунд).
+        void AddFiles(string[] files)
         {
-            foreach (string f in files) if (!AddImage(Pictures.FromFile(f))) break;
+            var docs = new List<string>();
+            foreach (string f in files)
+            {
+                if (Pictures.IsImageFile(f)) { if (!AddImage(Pictures.FromFile(f))) break; }
+                else docs.Add(f);
+            }
+            if (docs.Count == 0) return;
+            if (attach.Files.Count + docs.Count > FileText.MaxPerMessage)
+            {
+                MessageBox.Show(this, "До одного повідомлення можна додати до " + FileText.MaxPerMessage + " файлів.", "Open Forge");
+                docs = docs.Take(Math.Max(0, FileText.MaxPerMessage - attach.Files.Count)).ToList();
+            }
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                var read = new List<FileAttachment>();
+                var errors = new List<string>();
+                foreach (string f in docs)
+                {
+                    string err;
+                    var fa = FileText.Read(f, out err);
+                    if (fa != null) read.Add(fa); else errors.Add(err);
+                }
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        foreach (var fa in read) attach.AddFile(fa);
+                        if (errors.Count > 0) MessageBox.Show(this, string.Join("\n", errors.ToArray()), "Open Forge");
+                        chatInput.Box.Focus();
+                    }));
+                }
+                catch { }
+            });
         }
 
         bool AddImage(string b64)
@@ -319,6 +382,7 @@ namespace OpenForge
             FinishIfDone(true);
             Speaker.Stop();
             chatList.Clear();
+            SetEditing(null);
             chatId = chatTitle = null;
             historyList.Selected = null;
             historyList.Invalidate();
@@ -333,8 +397,15 @@ namespace OpenForge
             if (chatId == null) return;
             ChatStore.Save(chatId, chatTitle, chatList.Items);
             historyList.Selected = chatId;
-            historyList.SetItems(ChatStore.All());
+            RefreshHistory();
             if (current == 0) sidebar.Selected = -1;
+        }
+
+        void RefreshHistory()
+        {
+            string q = historySearch != null ? historySearch.Box.Text.Trim() : "";
+            historyList.EmptyText = q.Length > 0 ? "Нічого не знайдено за «" + q + "»." : null;
+            historyList.SetItems(ChatStore.Search(q));
         }
 
         void OpenChat(string id)
@@ -344,6 +415,7 @@ namespace OpenForge
             string title;
             var msgs = ChatStore.Load(id, out title);
             chatList.Clear();
+            SetEditing(null);
             foreach (var m in msgs) chatList.Items.Add(m);
             chatList.Changed(null);
             chatList.ScrollToEnd();
@@ -366,7 +438,7 @@ namespace OpenForge
                 ChatStore.Rename(id, d.Value);
                 if (id == chatId) chatTitle = d.Value;
             }
-            historyList.SetItems(ChatStore.All());
+            RefreshHistory();
         }
 
         void DeleteChat(string id)
@@ -377,7 +449,7 @@ namespace OpenForge
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             if (id == chatId) { if (Busy) return; NewChat(); }
             ChatStore.Delete(id);
-            historyList.SetItems(ChatStore.All());
+            RefreshHistory();
         }
 
         // ── озвучка ─────────────────────────────────────────────────────────────
@@ -412,27 +484,64 @@ namespace OpenForge
             if (agent != null) { agent.Cancel(); return; }
             string text = chatInput.Box.Text.Trim();
             var images = attach.Images.Count > 0 ? new List<string>(attach.Images) : null;
-            if (text.Length == 0 && images == null) return;
-            if (text.Length == 0) text = "Що на цьому зображенні?";
-            // Стан Ollama перевіряється раз на 3 с, тож одразу після запуску він ще може бути невідомим —
-            // не блокуємо: якщо Ollama справді не працює, запит сам поверне зрозумілу помилку.
-            if (string.IsNullOrEmpty(model))
+            var files = attach.Files.Count > 0 ? new List<FileAttachment>(attach.Files) : null;
+            if (text.Length == 0 && images == null && files == null) return;
+            if (text.Length == 0) text = images != null ? "Що на цьому зображенні?" : "Що в цьому файлі? Коротко перекажи головне.";
+            if (!ModelReady()) return;
+            if (editing != null)
             {
-                chatList.Add(new ChatMessage("error", ollamaVersion == null && !firstPoll
-                    ? "Ollama не запущена. Запусти її й надішли ще раз."
-                    : "Спершу завантаж модель у розділі «Моделі»."));
-                return;
+                // Редагування: прибираємо старе повідомлення й усе після нього, далі — як нове.
+                int i = chatList.Items.IndexOf(editing);
+                bool first = chatList.Items.FindIndex(x => x.IsUser) == i;
+                if (first && chatTitle == ChatStore.TitleFrom(editing.Raw)) chatTitle = ChatStore.TitleFrom(text);   // назва — з першого питання
+                if (i >= 0) RemoveFrom(i);
+                SetEditing(null);
             }
+            var um = new ChatMessage("user", text) { Images = images, Files = files };
+            chatList.Add(um);
+            attach.Clear();
+            chatInput.Box.Clear();
+            if (chatId == null) { chatId = ChatStore.NewId(); chatTitle = ChatStore.TitleFrom(text); }
+            Ask(um);
+        }
 
+        // Стан Ollama перевіряється раз на 3 с, тож одразу після запуску він ще може бути невідомим —
+        // не блокуємо: якщо Ollama справді не працює, запит сам поверне зрозумілу помилку.
+        bool ModelReady()
+        {
+            if (!string.IsNullOrEmpty(model)) return true;
+            chatList.Add(new ChatMessage("error", ollamaVersion == null && !firstPoll
+                ? "Ollama не запущена. Запусти її й надішли ще раз."
+                : "Спершу завантаж модель у розділі «Моделі»."));
+            return false;
+        }
+
+        void RemoveFrom(int index)
+        {
+            while (chatList.Items.Count > index) chatList.Items.RemoveAt(chatList.Items.Count - 1);
+            chatList.ClearSelection();
+            chatList.Changed(null);
+        }
+
+        // Розмова для моделі — усе до повідомлення um включно. Файли й картинки «важкі», тож повний текст файлів
+        // іде лише з останнього повідомлення з файлами, а картинок — лише 4 найсвіжіші.
+        List<Turn> History(ChatMessage um)
+        {
             var history = new List<Turn>();
-            foreach (var m in chatList.Items)
+            bool filesSent = false;
+            int end = chatList.Items.IndexOf(um);
+            for (int i = end; i >= 0; i--)
             {
+                var m = chatList.Items[i];
                 if (m.Role != "user" && m.Role != "assistant") continue;
                 string t = m.Role == "assistant" ? m.Display : m.Raw;
-                if (t.Length > 0) history.Add(new Turn(m.Role, t) { Images = m.Role == "user" ? m.Images : null });
+                if (m.Role == "user" && m.Files != null && m.Files.Count > 0)
+                {
+                    if (!filesSent) { t = FileText.ForModel(m.Files, t); filesSent = true; }
+                    else t = "(Раніше прикріплені файли: " + string.Join(", ", m.Files.Select(f => f.Name).ToArray()) + ")\n\n" + t;
+                }
+                if (t.Length > 0) history.Insert(0, new Turn(m.Role, t) { Images = m.Role == "user" ? m.Images : null });
             }
-            history.Add(new Turn("user", text) { Images = images });
-            // Картинки «важкі» для пам'яті розмови: моделі передаємо лише 4 найсвіжіші.
             int left = 4;
             for (int i = history.Count - 1; i >= 0; i--)
             {
@@ -442,27 +551,30 @@ namespace OpenForge
                 else if (im.Count > left) history[i].Images = im.GetRange(im.Count - left, left);
                 left -= im.Count;
             }
+            return history;
+        }
 
-            chatList.Add(new ChatMessage("user", text) { Images = images });
-            attach.Clear();
-            if (chatId == null) { chatId = ChatStore.NewId(); chatTitle = ChatStore.TitleFrom(text); }
+        // Надіслати моделі розмову, що закінчується твоїм повідомленням um (воно вже в стрічці).
+        void Ask(ChatMessage um)
+        {
+            var history = History(um);
             SaveChat();
             answer = new ChatMessage("assistant", "") { Streaming = true, Model = model };
             chatList.Add(answer);
-            chatInput.Box.Clear();
 
             if (agentFolder != null)
             {
+                string task = history.Count > 0 ? history[history.Count - 1].Content : um.Raw;
                 history.RemoveAt(history.Count - 1);
                 var run = new AgentRun(agentFolder, model, agentPerm, history, Settings.Get("SystemPrompt", ""));
-                run.TaskImages = images;
+                run.TaskImages = um.Images;
                 run.ModelSeesImages = ModelSeesImages(model) != false;
                 shotsSeen = 0;
                 run.Confirm = AskAgentPermission;
                 agent = run;
                 answer.Folder = run.Folder;
                 seen = 0;
-                var at = new Thread(() => run.Run(text));
+                var at = new Thread(() => run.Run(task));
                 at.IsBackground = true;
                 at.Start();
                 pump.Start();
@@ -481,6 +593,58 @@ namespace OpenForge
             SetSending(true);
         }
 
+        // ── редагування, видалення, «Ще раз» ───────────────────────────────────
+
+        void SetEditing(ChatMessage m)
+        {
+            editing = m;
+            if (editChip != null) LayoutChat();
+        }
+
+        void StartEdit(ChatMessage m)
+        {
+            if (Busy || !m.IsUser) return;
+            attach.Clear();
+            if (m.Images != null) foreach (string b in m.Images) attach.Add(b);
+            if (m.Files != null) foreach (var f in m.Files) attach.AddFile(f);
+            chatInput.Box.Text = m.Raw;
+            chatInput.Box.SelectionStart = chatInput.Box.TextLength;
+            SetEditing(m);
+            chatInput.Box.Focus();
+        }
+
+        void DeleteMessage(ChatMessage m)
+        {
+            if (Busy) return;
+            int i = chatList.Items.IndexOf(m);
+            if (i < 0) return;
+            int j = i + 1;
+            if (m.IsUser) while (j < chatList.Items.Count && !chatList.Items[j].IsUser) j++;   // разом із відповіддю на нього
+            if (editing != null && chatList.Items.IndexOf(editing) >= i && chatList.Items.IndexOf(editing) < j) { SetEditing(null); chatInput.Box.Clear(); attach.Clear(); }
+            Speaker.Stop();
+            chatList.Items.RemoveRange(i, j - i);
+            chatList.ClearSelection();
+            chatList.Changed(null);
+            if (chatId != null)
+            {
+                if (chatList.Items.Any(x => x.Role == "user" || x.Role == "assistant")) SaveChat();
+                else { ChatStore.Delete(chatId); chatId = chatTitle = null; historyList.Selected = null; RefreshHistory(); }
+            }
+        }
+
+        // Перегенерувати останню відповідь: прибрати її й спитати модель ще раз.
+        void Regenerate(ChatMessage m)
+        {
+            if (Busy || !ModelReady()) return;
+            int i = chatList.Items.IndexOf(m);
+            int u = i - 1;
+            while (u >= 0 && !chatList.Items[u].IsUser) u--;
+            if (u < 0) return;
+            Speaker.Stop();
+            RemoveFrom(u + 1);
+            Ask(chatList.Items[u]);
+        }
+
         void Pump()
         {
             if (agent != null) { PumpAgent(); return; }
@@ -489,6 +653,8 @@ namespace OpenForge
             if (t != null)
             {
                 answer.Raw = t;
+                if (answer.ThinkSec == 0 && t.IndexOf("</think>", StringComparison.Ordinal) >= 0)
+                    answer.ThinkSec = Math.Max(1, (DateTime.UtcNow - (stream.FirstToken == default(DateTime) ? answer.StartedAt : stream.FirstToken)).TotalSeconds);
                 chatList.Changed(answer);
             }
             else if (answer.Display.Length == 0) chatList.Invalidate();   // крапки й таймер «Думає над відповіддю»
@@ -539,6 +705,8 @@ namespace OpenForge
             pump.Stop();
             answer.Streaming = false;
             answer.Raw = s.Text;
+            if (answer.ThinkSec == 0 && answer.Think.Length > 0)
+                answer.ThinkSec = Math.Max(1, (s.Finished - (s.FirstToken == default(DateTime) ? s.Started : s.FirstToken)).TotalSeconds);
             if (answer.Display.Length == 0) chatList.Remove(answer);
             else
             {

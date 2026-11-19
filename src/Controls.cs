@@ -647,7 +647,7 @@ namespace OpenForge
                 if (FilesPasted != null && Clipboard.ContainsFileDropList())
                 {
                     var files = new System.Collections.Generic.List<string>();
-                    foreach (string f in Clipboard.GetFileDropList()) if (Pictures.IsImageFile(f)) files.Add(f);
+                    foreach (string f in Clipboard.GetFileDropList()) if (Pictures.IsImageFile(f) || FileText.CanRead(f)) files.Add(f);
                     if (files.Count > 0) { FilesPasted(files.ToArray()); return; }
                 }
             }

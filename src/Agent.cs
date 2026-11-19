@@ -290,7 +290,7 @@ namespace OpenForge
             pendingShot = b64;
         }
 
-        static string FindBrowser()
+        internal static string FindBrowser()
         {
             string env = Environment.GetEnvironmentVariable("OPENFORGE_BROWSER");
             if (!string.IsNullOrEmpty(env) && File.Exists(env)) return env;

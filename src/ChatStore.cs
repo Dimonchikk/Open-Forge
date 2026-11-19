@@ -14,6 +14,7 @@ namespace OpenForge
     {
         public string Id, Title;
         public DateTime Updated;
+        public string Text;   // увесь текст чату (для пошуку)
     }
 
     static class ChatStore
@@ -62,12 +63,30 @@ namespace OpenForge
                             if (d == null) continue;
                             DateTime upd;
                             if (!DateTime.TryParse(S(d, "updated"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out upd)) upd = File.GetLastWriteTime(f);
-                            cache.Add(new ChatEntry { Id = Path.GetFileNameWithoutExtension(f), Title = S(d, "title") ?? "Чат", Updated = upd });
+                            cache.Add(new ChatEntry { Id = Path.GetFileNameWithoutExtension(f), Title = S(d, "title") ?? "Чат", Updated = upd, Text = TextOf(d) });
                         }
                 }
                 catch { }
             }
             return cache.OrderByDescending(e => e.Updated).ToList();
+        }
+
+        static string TextOf(Dictionary<string, object> d)
+        {
+            var sb = new StringBuilder();
+            object arr;
+            if (d.TryGetValue("messages", out arr) && arr is object[])
+                foreach (object o in (object[])arr) { var m = o as Dictionary<string, object>; if (m != null) sb.Append(S(m, "content")).Append('\n'); }
+            return sb.ToString();
+        }
+
+        // Чати, у назві чи тексті яких є запит (без урахування регістру).
+        public static List<ChatEntry> Search(string q)
+        {
+            q = (q ?? "").Trim();
+            if (q.Length == 0) return All();
+            return All().Where(e => (e.Title ?? "").IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0 ||
+                                    (e.Text ?? "").IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0).ToList();
         }
 
         public static void Save(string id, string title, IEnumerable<ChatMessage> messages)
@@ -81,9 +100,12 @@ namespace OpenForge
                 if (m.Stats != null) d["stats"] = m.Stats;
                 if (m.Folder != null) d["folder"] = m.Folder;
                 if (m.Images != null && m.Images.Count > 0) d["images"] = m.Images.ToArray();
+                if (m.Files != null && m.Files.Count > 0)
+                    d["files"] = m.Files.Select(f => (object)new Dictionary<string, object> { { "name", f.Name }, { "text", f.Text }, { "chars", f.Chars } }).ToArray();
+                if (m.ThinkSec > 0) d["think_sec"] = Math.Round(m.ThinkSec, 1);
                 list.Add(d);
             }
-            if (list.Count == 0) return;
+            if (list.Count == 0) { Delete(id); return; }   // усе видалили — чату більше немає
             var now = DateTime.Now;
             var body = new Dictionary<string, object> { { "title", title }, { "updated", now.ToString("o", CultureInfo.InvariantCulture) }, { "messages", list } };
             try
@@ -96,8 +118,9 @@ namespace OpenForge
             catch { return; }
             All();
             var e = cache.Find(x => x.Id == id);
-            if (e == null) cache.Add(new ChatEntry { Id = id, Title = title, Updated = now });
-            else { e.Title = title; e.Updated = now; }
+            string text = TextOf(body);
+            if (e == null) cache.Add(new ChatEntry { Id = id, Title = title, Updated = now, Text = text });
+            else { e.Title = title; e.Updated = now; e.Text = text; }
         }
 
         public static List<ChatMessage> Load(string id, out string title)
@@ -114,9 +137,15 @@ namespace OpenForge
                     var m = o as Dictionary<string, object>;
                     if (m == null) continue;
                     var cm = new ChatMessage(S(m, "role") ?? "user", S(m, "content") ?? "") { Model = S(m, "model"), Stats = S(m, "stats"), Folder = S(m, "folder") };
-                    object imgs;
+                    object imgs, files, ts;
                     if (m.TryGetValue("images", out imgs) && imgs is object[])
                         cm.Images = ((object[])imgs).Select(x => Convert.ToString(x)).Where(x => !string.IsNullOrEmpty(x)).ToList();
+                    if (m.TryGetValue("files", out files) && files is object[])
+                        cm.Files = ((object[])files).OfType<Dictionary<string, object>>()
+                            .Select(f => new FileAttachment { Name = S(f, "name") ?? "файл", Text = S(f, "text") ?? "", Chars = (S(f, "text") ?? "").Length })
+                            .ToList();
+                    if (cm.Files != null && cm.Files.Count == 0) cm.Files = null;
+                    if (m.TryGetValue("think_sec", out ts) && ts != null) try { cm.ThinkSec = Convert.ToDouble(ts, CultureInfo.InvariantCulture); } catch { }
                     res.Add(cm);
                 }
             return res;

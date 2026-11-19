@@ -241,6 +241,7 @@ namespace OpenForge
                 using (var sr = new StreamReader(resp.GetResponseStream(), Encoding.UTF8))
                 {
                     string line;
+                    bool thinking = false;   // нові Ollama віддають міркування окремим полем «thinking» — складаємо їх у <think>…</think>
                     while (!stream.Cancelled && (line = sr.ReadLine()) != null)
                     {
                         if (line.Length == 0) continue;
@@ -249,7 +250,10 @@ namespace OpenForge
                         string err = Str(d, "error");
                         if (err != null) { stream.Error = Friendly(err); break; }
                         var msg = Obj(d.ContainsKey("message") ? d["message"] : null);
-                        stream.Append(Str(msg, "content"));
+                        string th = Str(msg, "thinking"), content = Str(msg, "content");
+                        if (!string.IsNullOrEmpty(th)) { if (!thinking) { stream.Append("<think>"); thinking = true; } stream.Append(th); }
+                        if (!string.IsNullOrEmpty(content) && thinking) { stream.Append("</think>"); thinking = false; }
+                        stream.Append(content);
                         if (d.ContainsKey("done") && d["done"] is bool && (bool)d["done"])
                         {
                             stream.EvalCount = Num(d, "eval_count");
