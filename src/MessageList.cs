@@ -23,10 +23,11 @@ namespace OpenForge
         public string Folder;        // папка агента (кнопка «Відкрити папку»)
         public double Tag;           // швидкість (для «Порівняння»)
         public bool Streaming;
+        public bool StepsOpen;       // кроки агента розгорнуті
 
         internal string Shown;
         internal int LayoutW = -1, Height, BubbleW;
-        internal bool LayoutFoot;
+        internal bool LayoutFoot, LayoutSteps;
         internal readonly List<Para> Paras = new List<Para>();
 
         public ChatMessage(string role, string raw) { Role = role; Raw = raw ?? ""; }
@@ -64,8 +65,11 @@ namespace OpenForge
     // Один рядок вихідного тексту (або шматок дуже довгого рядка), розкладений на рядки екрана.
     class Para
     {
-        public const int Text = 0, CodeLine = 1, CodeHead = 2, CodeFoot = 3;
+        public const int Text = 0, CodeLine = 1, CodeHead = 2, CodeFoot = 3, Steps = 4;
         public int Kind;
+        public bool Step;                            // рядок зі списку кроків агента (з відступом, блідий)
+        public List<string> StepList;                // для Steps: усі кроки групи
+        public string Summary;                       // для Steps: підсумок «Створив файлів: 3 · …»
         public string Str = "";
         public int Start;                            // позиція в ChatMessage.Shown
         public List<int> Lines = new List<int> { 0 };  // початки рядків екрана в Str
@@ -235,13 +239,13 @@ namespace OpenForge
             string disp = m.Display;
             if (disp.Length == 0 && m.Streaming) disp = "Думає…";
             bool foot = HasFoot(m);
-            if (disp == m.Shown && w == m.LayoutW && foot == m.LayoutFoot) return;
+            if (disp == m.Shown && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps) return;
 
             // 1. Розбити на абзаци: звичайні рядки й блоки коду між ``` (лише у відповідях моделі).
             var paras = new List<Para>();
             bool parseCode = m.Role == "assistant";
             bool inCode = false;
-            Para head = null;
+            Para head = null, steps = null;
             var code = new StringBuilder();
             int pos = 0;
             foreach (string line in disp.Split('\n'))
@@ -249,6 +253,19 @@ namespace OpenForge
                 int start = pos;
                 pos += line.Length + 1;
                 string trimmed = line.TrimStart();
+                // Кроки агента («▸ …») згортаються в один рядок-підсумок; клік розгортає список.
+                if (parseCode && !inCode && trimmed.StartsWith("▸ "))
+                {
+                    if (steps == null)
+                    {
+                        steps = new Para { Kind = Para.Steps, Str = "", Start = start, StepList = new List<string>() };
+                        paras.Add(steps);
+                    }
+                    steps.StepList.Add(trimmed.Substring(2));
+                    if (m.StepsOpen) paras.Add(new Para { Kind = Para.Text, Str = trimmed.Substring(2), Start = start + (line.Length - trimmed.Length) + 2, Step = true });
+                    continue;
+                }
+                if (trimmed.Length > 0) steps = null;
                 if (parseCode && trimmed.StartsWith("```"))
                 {
                     if (!inCode)
@@ -280,6 +297,15 @@ namespace OpenForge
                 }
                 paras.Add(new Para { Kind = kind, Str = t, Start = off });
             }
+            // Підсумки груп кроків.
+            Para lastSteps = null;
+            foreach (var p in paras) if (p.Kind == Para.Steps) { p.Summary = StepsSummary(p.StepList); lastSteps = p; }
+            if (m.Streaming && lastSteps != null && lastSteps.StepList.Count > 0)
+            {
+                string cur = lastSteps.StepList[lastSteps.StepList.Count - 1];
+                int mark = cur.IndexOf("  ");
+                lastSteps.Summary = "Працює: " + (mark > 0 ? cur.Substring(0, mark) : cur);
+            }
             if (inCode)   // блок ще пишеться — закриваємо його візуально
             {
                 head.Code = code.ToString().TrimEnd('\n');
@@ -298,12 +324,13 @@ namespace OpenForge
             {
                 if (p.Kind == Para.CodeHead) p.H = Ui.S(34);
                 else if (p.Kind == Para.CodeFoot) p.H = Ui.S(20);
+                else if (p.Kind == Para.Steps) p.H = Ui.S(36);
                 else
                 {
                     int fi = p.Kind == Para.CodeLine ? 1 : 0;
-                    int lw = p.Kind == Para.CodeLine ? w - 2 * CodePad : w;
+                    int lw = p.Kind == Para.CodeLine ? w - 2 * CodePad : p.Step ? w - StepIndent : w;
                     Para prev;
-                    if (p.Str.Length > 0 && old.TryGetValue(p.Kind + "\u0001" + p.Str, out prev)) { p.Lines = prev.Lines; p.W = prev.W; }
+                    if (p.Str.Length > 0 && !p.Step && old.TryGetValue(p.Kind + "\u0001" + p.Str, out prev)) { p.Lines = prev.Lines; p.W = prev.W; }
                     else if (p.Str.Length > 0) Wrap(p, Math.Max(Ui.S(20), lw), fi);
                     p.H = p.Lines.Count * (fi == 1 ? lhCode : lhText);
                     maxW = Math.Max(maxW, p.W + (fi == 1 ? 2 * CodePad : 0));
@@ -314,9 +341,38 @@ namespace OpenForge
             m.Shown = disp;
             m.LayoutW = w;
             m.LayoutFoot = foot;
+            m.LayoutSteps = m.StepsOpen;
             bool bubble = m.Role != "assistant";
             m.BubbleW = bubble ? Math.Min(w, maxW) + 2 * PadX + Ui.S(2) : w;
             m.Height = h + (bubble ? 2 * PadY : 0) + (foot ? FootH + Ui.S(4) : 0);
+        }
+
+        int StepIndent { get { return Ui.S(22); } }
+
+        // «Створив файлів: 3 · виконав команд: 1 · помилок: 1»
+        static string StepsSummary(List<string> list)
+        {
+            int create = 0, read = 0, look = 0, cmd = 0, del = 0, fail = 0, other = 0;
+            foreach (string st in list)
+            {
+                if (st.Contains("✗")) fail++;
+                if (st.StartsWith("Створює файл")) create++;
+                else if (st.StartsWith("Читає")) read++;
+                else if (st.StartsWith("Дивиться файли")) look++;
+                else if (st.StartsWith("Виконує команду")) cmd++;
+                else if (st.StartsWith("Видаляє")) del++;
+                else other++;
+            }
+            var parts = new List<string>();
+            if (create > 0) parts.Add("створив файлів: " + create);
+            if (read > 0) parts.Add("прочитав: " + read);
+            if (look > 0) parts.Add("переглянув папку: " + look);
+            if (cmd > 0) parts.Add("виконав команд: " + cmd);
+            if (del > 0) parts.Add("видалив: " + del);
+            if (other > 0) parts.Add("інших кроків: " + other);
+            if (fail > 0) parts.Add("не вдалося: " + fail);
+            string s = string.Join(" · ", parts.ToArray());
+            return s.Length > 0 ? char.ToUpper(s[0]) + s.Substring(1) : "Кроки";
         }
 
         void Recount()
@@ -418,7 +474,8 @@ namespace OpenForge
                     if (ty + p.H >= 0 && ty <= Height)
                     {
                         bool code = p.Kind == Para.CodeLine;
-                        yield return new PV { M = m, Mi = mi, P = p, X = tx + (code ? CodePad : 0), Y = ty, W = m.LayoutW - (code ? 2 * CodePad : 0), Box = r };
+                        int ind = code ? CodePad : p.Step ? StepIndent : 0;
+                        yield return new PV { M = m, Mi = mi, P = p, X = tx + ind, Y = ty, W = m.LayoutW - (code ? 2 * CodePad : ind), Box = r };
                     }
                     ty += p.H;
                     if (ty > Height) break;
@@ -505,9 +562,19 @@ namespace OpenForge
                     continue;
                 }
                 if (p.Kind == Para.CodeFoot) continue;
+                if (p.Kind == Para.Steps)
+                {
+                    var sr = StepsRect(v);
+                    Ui.FillRound(g, sr, sr.Height / 2f, hoverObj == m && hoverKey == "steps" ? Ui.FillHover : Ui.Fill);
+                    float ic = Ui.S(13);
+                    Icons.Draw(g, "folder", new RectangleF(sr.X + Ui.S(11), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink2);
+                    Ui.Text(g, p.Summary, Ui.Small, new Rectangle(sr.X + Ui.S(30), sr.Y, sr.Width - Ui.S(56), sr.Height), Ui.Ink2, Ui.Left);
+                    Icons.Draw(g, m.StepsOpen ? "chevron" : "chevron-right", new RectangleF(sr.Right - Ui.S(22), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink3);
+                    continue;
+                }
                 int fi = p.Kind == Para.CodeLine ? 1 : 0;
 
-                Color fore = m.IsUser ? Color.White : m.Role == "error" ? Ui.Red : (m.Streaming && m.Display.Length == 0) ? Ui.Ink3 : Ui.Ink;
+                Color fore = m.IsUser ? Color.White : m.Role == "error" ? Ui.Red : (m.Streaming && m.Display.Length == 0) ? Ui.Ink3 : p.Step ? Ui.Ink2 : Ui.Ink;
                 int lh = LineH(p.Kind);
                 int s0, s1;
                 bool hasSel = SelRange(v.Mi, out s0, out s1);
@@ -541,6 +608,33 @@ namespace OpenForge
                     g.FillRectangle(br, 0, 0, Width - Ui.S(12), fh);
             }
             PaintBar(g);
+            PaintDownButton(g);
+        }
+
+        // Кругла кнопка «вниз»: з'являється, коли прокрутив угору від кінця розмови.
+        bool ShowDown { get { return total > Height && offset < MaxOffset - Ui.S(60); } }
+
+        Rectangle DownRect
+        {
+            get { int d = Ui.S(36); return new Rectangle(ColX + ColW / 2 - d / 2, Height - d - Ui.S(10), d, d); }
+        }
+
+        void PaintDownButton(Graphics g)
+        {
+            if (!ShowDown) return;
+            var r = DownRect;
+            bool hov = hoverKey == "down";
+            using (var sh = new SolidBrush(Color.FromArgb(Ui.Dark ? 90 : 28, 0, 0, 0))) g.FillEllipse(sh, r.X, r.Y + Ui.S(2), r.Width, r.Height);
+            using (var b = new SolidBrush(hov ? Ui.Mix(Ui.Card, Ui.Ink, 0.07f) : Ui.Card)) g.FillEllipse(b, r);
+            using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale))) g.DrawEllipse(pen, r);
+            float s = Ui.S(15);
+            Icons.Draw(g, "arrow-down", new RectangleF(r.X + (r.Width - s) / 2f, r.Y + (r.Height - s) / 2f, s, s), Ui.Ink);
+        }
+
+        Rectangle StepsRect(PV v)
+        {
+            int tw = TextRenderer.MeasureText(v.P.Summary ?? "", Ui.Small, Size.Empty, NF).Width;
+            return new Rectangle(v.X, v.Y + Ui.S(4), Math.Min(v.W, tw + Ui.S(62)), Ui.S(28));
         }
 
         void PaintFoot(Graphics g, ChatMessage m, Rectangle r)
@@ -737,8 +831,12 @@ namespace OpenForge
                 if (HasFoot(kv.Key))
                     foreach (var l in FootLinks(kv.Key, kv.Value))
                         if (l.Value.Contains(p)) { obj = kv.Key; key = l.Key; return true; }
+            if (ShowDown && DownRect.Contains(p)) { obj = this; key = "down"; return true; }
             foreach (var v in VisibleParas())
+            {
                 if (v.P.Kind == Para.CodeHead && CodeCopyRect(v).Contains(p)) { obj = v.P; key = "code"; return true; }
+                if (v.P.Kind == Para.Steps && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
+            }
             return false;
         }
 
@@ -846,6 +944,15 @@ namespace OpenForge
             else if (key == "copy") CopyToClipboard(((ChatMessage)obj).Display, obj);
             else if (key == "folder" && OpenFolder != null) OpenFolder(((ChatMessage)obj).Folder);
             else if (key == "speak" && Speak != null) Speak((ChatMessage)obj);
+            else if (key == "down") ScrollToEnd();
+            else if (key == "steps")
+            {
+                var m = (ChatMessage)obj;
+                m.StepsOpen = !m.StepsOpen;
+                ClearSelection();
+                Recount();
+                ScrollTo(offset);
+            }
         }
 
         protected override void OnMouseLeave(EventArgs e)
