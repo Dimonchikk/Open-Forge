@@ -208,11 +208,14 @@ namespace OpenForge
                     case "create_file":
                         {
                             string p = SafePath(Arg(a, "path"));
+                            string dup = File.Exists(p) ? null : SimilarFile(p);
                             Directory.CreateDirectory(Path.GetDirectoryName(p));
                             string content = Arg(a, "content");
                             File.WriteAllText(p, content, new UTF8Encoding(false));
                             Changed.Add(Arg(a, "path"));
-                            result = "створено (" + Encoding.UTF8.GetByteCount(content) + " байт)" + CheckStubs(Arg(a, "path"), content);
+                            result = "створено (" + Encoding.UTF8.GetByteCount(content) + " байт)" + CheckStubs(Arg(a, "path"), content) +
+                                     (dup == null ? "" : "\nУВАГА: у проєкті вже є схожий файл «" + dup + "». Не плоди копії (final_, new_, _v2, _fixed): " +
+                                      "зміни існуючий файл і видали зайву копію через delete_file, щоб у проєкті лишилась одна версія.");
                             return true;
                         }
                     case "read_file":
@@ -562,7 +565,8 @@ namespace OpenForge
                     "reply with a short summary of what you did, in the user's language.\n" +
                     "After you build or change a web page, call screenshot_page to check how it looks" + (ModelSeesImages ? " and fix what looks wrong" : "") + ". " +
                     "For a desktop app, use start_program and then screenshot_window.\nProject folder: " + root;
-                system += FullProjectRules;
+                system += FullProjectRules + ExistingProject();
+                task = ContinueTask(task);
                 if (!string.IsNullOrEmpty(instruction) && instruction.Trim().Length > 0) system += "\n\nUser instruction: " + instruction;
                 var messages = new List<object> { new Dictionary<string, object> { { "role", "system" }, { "content", system } } };
                 foreach (var t in history) messages.Add(t.ToJson());

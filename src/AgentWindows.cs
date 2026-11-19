@@ -598,6 +598,67 @@ namespace OpenForge
             return null;
         }
 
+        // ── продовження проєкту ──────────────────────────────────────────────────
+
+        // Якщо в папці вже є файли — показати їх моделі, щоб вона продовжувала, а не починала заново.
+        string ExistingProject()
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                int n = 0;
+                foreach (string f in System.IO.Directory.EnumerateFiles(root, "*", System.IO.SearchOption.AllDirectories))
+                {
+                    string rel = f.Substring(root.Length).TrimStart('\\', '/');
+                    if (rel.StartsWith(".git") || rel.Contains("node_modules") || rel.Contains("__pycache__") || rel.StartsWith("bin\\") || rel.StartsWith("obj\\")) continue;
+                    long len = new System.IO.FileInfo(f).Length;
+                    sb.Append("\n- ").Append(rel).Append(" (").Append(len < 1024 ? len + " B" : (len / 1024) + " KB").Append(")");
+                    if (++n >= 150) { sb.Append("\n- …"); break; }
+                }
+                if (n == 0) return "";
+                return "\n\nTHE PROJECT FOLDER ALREADY HAS FILES (earlier work on this project):" + sb +
+                       "\nContinue THIS project: read the files you need (read_file) and change them in place. Do NOT start over and do NOT create " +
+                       "copies like final_app.ps1, new_app.ps1, app_v2.ps1 or app_fixed.ps1 — edit the existing file instead.";
+            }
+            catch { return ""; }
+        }
+
+        static readonly Regex ContinueWord = new Regex(@"^\s*(продовж\w*|далі|давай далі|ще|continue|go on|keep going|дороби\w*|доробляй)[\s.!]*$", RegexOptions.IgnoreCase);
+
+        // «продовжуй» → зрозуміле завдання для моделі.
+        static string ContinueTask(string task)
+        {
+            if (!ContinueWord.IsMatch(task ?? "")) return task;
+            return task + "\n\n(Продовжуй роботу над цим самим проєктом з того місця, де зупинився минулого разу — дивись історію розмови й файли в папці. " +
+                   "Спершу коротко перевір, що вже зроблено й чого бракує, потім допиши незавершене в існуючих файлах, запусти й перевір. Нових копій файлів не створюй.)";
+        }
+
+        static readonly Regex CopyMark = new Regex(@"^(final|new|fixed|updated|improved|complete|full|working|copy)[_\- ]+|[_\- ]+(final|new|fixed|updated|improved|complete|full|working|copy|v\d+|\d+)$|\s*\(\d+\)$", RegexOptions.IgnoreCase);
+
+        static string BaseName(string name)
+        {
+            string b = System.IO.Path.GetFileNameWithoutExtension(name), prev;
+            do { prev = b; b = CopyMark.Replace(b, ""); } while (b != prev && b.Length > 0);
+            return b.ToLowerInvariant();
+        }
+
+        // Новий файл схожий на вже наявний (final_app.ps1 поруч з app.ps1)? Повертає назву наявного або null.
+        string SimilarFile(string full)
+        {
+            try
+            {
+                string dir = System.IO.Path.GetDirectoryName(full), ext = System.IO.Path.GetExtension(full);
+                if (!System.IO.Directory.Exists(dir)) return null;
+                string b = BaseName(full);
+                if (b.Length == 0) return null;
+                foreach (string f in System.IO.Directory.GetFiles(dir, "*" + ext))
+                    if (!string.Equals(f, full, StringComparison.OrdinalIgnoreCase) && BaseName(f) == b)
+                        return f.Substring(root.Length).TrimStart('\\', '/');
+            }
+            catch { }
+            return null;
+        }
+
         const string FullProjectRules =
             "\n\nRULES FOR A COMPLETE PROJECT (the user wants a finished, working project, not an example):\n" +
             "- Write EVERY file in full with create_file. Never use placeholders like \"...\", \"// rest of the code\", \"TODO: implement\", " +
