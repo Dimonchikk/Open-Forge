@@ -334,16 +334,31 @@ namespace OpenForge
         {
             if (models.Count == 0) return;
             var items = new List<PopupItem>();
-            foreach (var m in models)
+            // Найсильніші зверху.
+            foreach (var m in models.OrderByDescending(x => { var c = Catalog.Find(x.Name); return c != null ? c.Power : 0; }).ThenBy(x => x.Name))
             {
                 string name = m.Name;
-                items.Add(new PopupItem(name, name == model, () =>
+                var it = new PopupItem(name, name == model, () =>
                 {
                     model = name;
                     Settings.Set("Model", name);
                     modelBtn.Text = name;
                     LayoutChat();
-                }) { Sub = m.SizeGb.ToString("0.0") + " ГБ" });
+                });
+                var c = Catalog.Find(name);
+                string gb = m.SizeGb.ToString("0.0") + " ГБ";
+                if (c != null)
+                {
+                    // Як у каталозі: позначки, сила 1–10, чи потягне ПК.
+                    it.Text = c.Name;
+                    it.Badges = ModelList.BadgesOf(c);
+                    it.Power = c.Power;
+                    var fit = c.FitFor(Hardware.VramGb, Hardware.RamGb);
+                    if (Hardware.Done) it.Dot = fit == Fit.Fast ? Ui.Green : fit == Fit.Slow ? Ui.Orange : Ui.Red;
+                    it.Detail = "· " + gb + " · " + (!Hardware.Done ? name : fit == Fit.Fast ? "швидко" : fit == Fit.Slow ? "повільніше — частина в RAM" : "не потягне ПК");
+                }
+                else it.Detail = gb + " · " + (string.IsNullOrEmpty(m.Params) ? "" : m.Params + " параметрів · ") + "немає в каталозі";
+                items.Add(it);
             }
             PopupMenu.Show(modelBtn, items);
         }

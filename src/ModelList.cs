@@ -66,10 +66,22 @@ namespace OpenForge
             return res;
         }
 
+        // Позначки моделі: «Без цензури», «Код + картинки» / «Розуміє картинки», «Міркує», «Код».
+        public static List<KeyValuePair<string, Color>> BadgesOf(CatalogModel m)
+        {
+            var badges = new List<KeyValuePair<string, Color>>();
+            if (m.Uncensored) badges.Add(new KeyValuePair<string, Color>("Без цензури", Ui.Purple));
+            if (m.Vision && m.Coder) badges.Add(new KeyValuePair<string, Color>("Код + картинки", Ui.Orange));
+            else if (m.Vision) badges.Add(new KeyValuePair<string, Color>("Розуміє картинки", Ui.Blue));
+            if (m.Thinks) badges.Add(new KeyValuePair<string, Color>("Міркує", Ui.Ink2));
+            if (m.Coder && !m.Vision) badges.Add(new KeyValuePair<string, Color>("Код", Ui.Orange));
+            return badges;
+        }
+
         static string Gb(double v) { return v.ToString(v < 10 ? "0.0" : "0") + " ГБ"; }
 
         // Колір сили: слабкі — сірувато-сині, середні — сині, найсильніші — фіолетові.
-        static Color PowerColor(int p) { return p >= 8 ? Ui.Purple : p >= 5 ? Ui.Blue : Ui.Mix(Ui.Blue, Ui.Ink3, 0.45f); }
+        internal static Color PowerColor(int p) { return p >= 8 ? Ui.Purple : p >= 5 ? Ui.Blue : Ui.Mix(Ui.Blue, Ui.Ink3, 0.45f); }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -113,12 +125,7 @@ namespace OpenForge
             int nameW = Math.Min(textW, TextRenderer.MeasureText(m.Name, Ui.Section, Size.Empty, TextFormatFlags.NoPadding).Width + Ui.S(2));
             Ui.Text(g, m.Name, Ui.Section, new Rectangle(left, r.Y + Ui.S(12), nameW, Ui.S(24)), Ui.Ink, Ui.Left);
             int bx = left + nameW + Ui.S(10), by = r.Y + Ui.S(14);
-            var badges = new List<KeyValuePair<string, Color>>();
-            if (m.Uncensored) badges.Add(new KeyValuePair<string, Color>("Без цензури", Ui.Purple));
-            if (m.Vision && m.Coder) badges.Add(new KeyValuePair<string, Color>("Код + картинки", Ui.Orange));
-            else if (m.Vision) badges.Add(new KeyValuePair<string, Color>("Розуміє картинки", Ui.Blue));
-            if (m.Thinks) badges.Add(new KeyValuePair<string, Color>("Міркує", Ui.Ink2));
-            if (m.Coder && !m.Vision) badges.Add(new KeyValuePair<string, Color>("Код", Ui.Orange));
+            var badges = BadgesOf(m);
             foreach (var b in badges)
             {
                 int w = TextRenderer.MeasureText(b.Key, Ui.Caps, Size.Empty, TextFormatFlags.NoPadding).Width + Ui.S(14);
