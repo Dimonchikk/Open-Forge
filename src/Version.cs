@@ -6,14 +6,14 @@ using System.Reflection;
 [assembly: AssemblyDescription("Локальні нейромережі на твоєму ПК")]
 [assembly: AssemblyCompany("Дмитро Бричнік")]
 [assembly: AssemblyCopyright("© 2026 Дмитро Бричнік")]
-[assembly: AssemblyVersion("2.9.3.0")]
-[assembly: AssemblyFileVersion("2.9.3.0")]
+[assembly: AssemblyVersion("2.9.4.0")]
+[assembly: AssemblyFileVersion("2.9.4.0")]
 
 namespace OpenForge
 {
     static class AppVersion
     {
-        public const string Text = "2.9.3";
-        public const string Full = "2.9.3.0";
+        public const string Text = "2.9.4";
+        public const string Full = "2.9.4.0";
     }
 }

@@ -875,7 +875,12 @@ namespace OpenForge
             if (details != null) answer.StepDetails = details;
             if (t != null || shots != null || details != null)
             {
-                if (t != null) { answer.Raw = t; answer.StepAt = DateTime.UtcNow; answer.SlowHint = false; }
+                if (t != null) { answer.Raw = t; answer.StepAt = DateTime.UtcNow; answer.SlowHint = false; answer.Waiting = false; }
+                chatList.Changed(answer);
+            }
+            else if (!answer.Waiting && (DateTime.UtcNow - (answer.StepAt == default(DateTime) ? answer.StartedAt : answer.StepAt)).TotalSeconds > 15)
+            {
+                answer.Waiting = true;    // агент мовчить — показати «Готує наступний крок» у кінці
                 chatList.Changed(answer);
             }
             else if (!answer.SlowHint && answer.StepAt != default(DateTime) && (DateTime.UtcNow - answer.StepAt).TotalSeconds > 60)
@@ -888,7 +893,7 @@ namespace OpenForge
             agent = null;
             pump.Stop();
             answer.Streaming = false;
-            answer.SlowHint = false;
+            answer.SlowHint = answer.Waiting = false;
             answer.Raw = run.Text;
             int changed = new HashSet<string>(run.Changed).Count;
             answer.Stats = (changed > 0 ? "змінено файлів: " + changed : "файли не змінювались") + (run.Cancelled ? " · зупинено" : "");

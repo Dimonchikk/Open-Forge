@@ -38,7 +38,8 @@ namespace OpenForge
         public DateTime StartedAt = DateTime.UtcNow;
         public DateTime StepAt;      // коли агент востаннє щось зробив (для таймера поточного кроку)
         public bool SlowHint;        // крок готується вже понад хвилину — показати пояснення
-        internal bool LayoutSlow;
+        public bool Waiting;         // агент мовчить понад кілька секунд
+        internal bool LayoutSlow, LayoutWaiting;
         internal string Site;        // index.html, який зробив агент (для «Переглянути сайт»)
         internal bool SiteChecked;
 
@@ -142,6 +143,7 @@ namespace OpenForge
         public List<string> StepList;                // для Steps: усі кроки групи
         public string Summary;                       // для Steps: підсумок «Створив файлів: 3 · …»
         public bool Live;                            // «Думає над відповіддю» — поки модель ще нічого не написала
+        public bool Wait;                            // «Готує наступний крок» у кінці відповіді агента, коли він мовчить
         public string Str = "";
         public int Start;                            // позиція в ChatMessage.Shown
         public List<int> Lines = new List<int> { 0 };  // початки рядків екрана в Str
@@ -389,12 +391,13 @@ namespace OpenForge
             int thinkKey = think.Length * 2 + (m.Streaming && m.InThink ? 1 : 0);
             string openKey = string.Join(",", m.OpenSteps.Select(x => x.ToString()).ToArray());
             int nDetails = m.StepDetails != null ? m.StepDetails.Count : 0;
-            if (m.SlowHint == m.LayoutSlow && openKey == m.LayoutOpen && nDetails == m.LayoutDetails && disp == m.LayoutDisp && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages &&
+            if (m.SlowHint == m.LayoutSlow && m.Waiting == m.LayoutWaiting && openKey == m.LayoutOpen && nDetails == m.LayoutDetails && disp == m.LayoutDisp && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages &&
                 thinkKey == m.LayoutThink && m.ThinkOpen == m.LayoutThinkOpen && nFiles == m.LayoutFiles) return;
             m.LayoutImages = nImg;
             m.LayoutFiles = nFiles;
             m.LayoutOpen = openKey;
             m.LayoutSlow = m.SlowHint;
+            m.LayoutWaiting = m.Waiting;
             m.LayoutDetails = nDetails;
             int stepNo = 0;
             bool waiting = disp.Length == 0 && m.Streaming && think.Length == 0;   // модель ще нічого не написала
@@ -558,6 +561,24 @@ namespace OpenForge
                 shown.Append(clean).Append('\n');
                 AddText(paras, proto, clean, sty, start);
             }
+            // Агент написав текст і замовк (наприклад «Створю файли:») — модель пише код, якого не видно до кінця.
+            // Показуємо живий рядок у кінці, щоб було зрозуміло, що вона працює.
+            if (m.Waiting && m.Streaming && !m.InThink)
+            {
+                string lastLine = "";
+                for (int i = lines.Length - 1; i >= 0; i--) if (lines[i].Trim().Length > 0) { lastLine = lines[i].TrimStart(); break; }
+                if (!lastLine.StartsWith("▸ "))
+                {
+                    paras.Add(new Para { Kind = Para.Steps, Str = "", Start = 0, Wait = true, StepList = new List<string>(), Summary = NextStep, Pad = Ui.S(6) });
+                    if (m.SlowHint)
+                        paras.Add(new Para
+                        {
+                            Kind = Para.Text, Str = "Модель готує наступний крок — найчастіше пише код файлу, а його не видно, доки вона не допише. " +
+                                                     "На великій моделі це може тривати кілька хвилин. Швидше: «Думати → Не думати» або модель з позначкою «Швидко».",
+                            Start = 0, Thought = true, Indent = StepIndent,
+                        });
+                }
+            }
             if (imagesPara != null && !m.IsUser) paras.Add(imagesPara);   // скріншоти агента — під текстом
             if (waiting)
             {
@@ -567,7 +588,7 @@ namespace OpenForge
 
             // Підсумки груп кроків.
             Para lastSteps = null;
-            foreach (var p in paras) if (p.Kind == Para.Steps && !p.Live) { p.Summary = StepsSummary(p.StepList); lastSteps = p; }
+            foreach (var p in paras) if (p.Kind == Para.Steps && !p.Live && !p.Wait) { p.Summary = StepsSummary(p.StepList); lastSteps = p; }
             if (m.Streaming && lastSteps != null && lastSteps.StepList.Count > 0)
             {
                 string cur = lastSteps.StepList[lastSteps.StepList.Count - 1];
@@ -1204,7 +1225,7 @@ namespace OpenForge
                     }
                     else Icons.Draw(g, th ? "spark" : "folder", new RectangleF(sr.X + Ui.S(11), sr.Y + (sr.Height - ic) / 2f, ic, ic), th ? Ui.Purple : Ui.Ink2);
                     Ui.Text(g, SummaryText(m, p), Ui.Small, new Rectangle(sr.X + Ui.S(36), sr.Y, sr.Width - Ui.S(62), sr.Height), Ui.Ink2, Ui.Left);
-                    if (!p.Live)
+                    if (!p.Live && !p.Wait)
                     {
                         bool open = th ? m.ThinkOpen : m.StepsOpen;
                         Icons.Draw(g, open ? "chevron" : "chevron-right", new RectangleF(sr.Right - Ui.S(22), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink3);
@@ -1357,6 +1378,7 @@ namespace OpenForge
 
         static bool IsLive(ChatMessage m, Para p)
         {
+            if (p.Wait) return m.Streaming;
             if (p.Kind == Para.Think) return m.Streaming && m.InThink;
             return m.Streaming && (p.Live || (p.Summary != null && (p.Summary.StartsWith("Працює: ") || p.Summary == NextStep)));
         }
@@ -1605,7 +1627,7 @@ namespace OpenForge
                 }
                 if (v.P.Kind == Para.CodeHead && CodeCopyRect(v).Contains(p)) { obj = v.P; key = "code"; return true; }
                 if (v.P.Kind == Para.CodeHead && Editable && IsHtml(v.P) && CodePreviewRect(v).Contains(p)) { obj = v.P; key = "preview"; return true; }
-                if (v.P.Kind == Para.Steps && !v.P.Live && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
+                if (v.P.Kind == Para.Steps && !v.P.Live && !v.P.Wait && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
                 if (v.P.Kind == Para.Think && StepsRect(v).Contains(p)) { obj = v.M; key = "think"; return true; }
                 if (v.P.Step && DetailOf(v.M, v.P.StepIdx) != null && StepRowRect(v).Contains(p)) { obj = v.M; key = "step:" + v.P.StepIdx; return true; }
                 if (v.P.Kind == Para.StepPic && new Rectangle(v.X, v.Y, v.P.Pic.Width, v.P.Pic.Height).Contains(p)) { obj = v.M; key = "steppic:" + v.P.StepIdx; return true; }
