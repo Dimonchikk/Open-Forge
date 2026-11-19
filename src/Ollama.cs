@@ -315,9 +315,11 @@ namespace OpenForge
                 if (think != null) body["think"] = think;
                 byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));
 
-                // Перша відповідь може йти довго (модель вантажиться у відеопам'ять), тож таймаут великий.
                 var req = Request("/api/chat", "POST", 30 * 60 * 1000);
-                req.Timeout = 60 * 60 * 1000;   // до першого слова: завантаження великої моделі й «читання» довгої розмови
+                // Без ліміту часу: велика модель на слабкому ПК може «читати» довгу розмову десятки хвилин.
+                // Поки чекаємо, видно таймер, а зупинити можна кнопкою.
+                req.Timeout = System.Threading.Timeout.Infinite;
+                req.ReadWriteTimeout = System.Threading.Timeout.Infinite;
                 req.ContentType = "application/json";
                 req.ContentLength = data.Length;
                 stream.Attach(req);
@@ -355,7 +357,7 @@ namespace OpenForge
             }
             catch (Exception ex)
             {
-                if (!stream.Cancelled) stream.Error = ex.Message;
+                if (!stream.Cancelled) stream.Error = Friendly(ex.Message);
             }
             finally
             {
