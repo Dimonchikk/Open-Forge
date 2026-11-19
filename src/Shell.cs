@@ -166,11 +166,44 @@ namespace OpenForge
         bool ShowButton { get { return update != null; } }
         int ListTop { get { return Ui.S(150); } }
 
+        // Показники навантаження ПК — над «Налаштуваннями» (ховаються, якщо вікно надто низьке).
+        const int MeterH = 27;
+        bool ShowMeters { get { return Height >= Ui.S(560); } }
+        int MetersTop { get { return ItemRect(1).Y - Ui.S(14) - Ui.S(4 * MeterH); } }
+        int ListBottom { get { return (ShowMeters ? MetersTop - Ui.S(14) : ItemRect(1).Y - Ui.S(8)); } }
+
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            if (list != null) list.Bounds = new Rectangle(Ui.S(4), ListTop, Width - Ui.S(6), Math.Max(0, ItemRect(1).Y - Ui.S(8) - ListTop));
+            if (list != null) list.Bounds = new Rectangle(Ui.S(4), ListTop, Width - Ui.S(6), Math.Max(0, ListBottom - ListTop));
             Invalidate();
+        }
+
+        // Перемалювати лише смужку показників (раз на 1,5 с).
+        public void RefreshMeters() { if (ShowMeters) Invalidate(new Rectangle(0, MetersTop - Ui.S(4), Width, Ui.S(4 * MeterH + 8))); }
+
+        static string Pct(float v) { return v < 0 ? "—" : Math.Round(v) + " %"; }
+        static string Gb(double used, double total) { return total <= 0 ? "—" : used.ToString("0.0") + " / " + total.ToString("0") + " ГБ"; }
+
+        void PaintMeters(Graphics g)
+        {
+            var rows = new[]
+            {
+                Tuple.Create("Процесор", Pct(PcMonitor.Cpu), PcMonitor.Cpu, Ui.Blue),
+                Tuple.Create("Пам'ять", Gb(PcMonitor.RamUsedGb, PcMonitor.RamTotalGb), PcMonitor.Ram, Ui.Green),
+                Tuple.Create("Відеокарта", Pct(PcMonitor.Gpu), PcMonitor.Gpu, Ui.Orange),
+                Tuple.Create("Відеопам'ять", Gb(PcMonitor.VramUsedGb, PcMonitor.VramTotalGb), PcMonitor.Vram, Ui.Purple),
+            };
+            int x = Ui.S(24), w = Width - Ui.S(46), y = MetersTop;
+            foreach (var r in rows)
+            {
+                Ui.Text(g, r.Item1, Ui.Caps, new Rectangle(x, y, w / 2, Ui.S(16)), Ui.Ink2, Ui.Left);
+                Ui.Text(g, r.Item2, Ui.Caps, new Rectangle(x + w / 2, y, w / 2, Ui.S(16)), Ui.Ink, Ui.Left | TextFormatFlags.Right);
+                var bar = new RectangleF(x, y + Ui.S(18), w, Ui.S(4));
+                Ui.FillRound(g, bar, bar.Height / 2f, Ui.Mix(Ui.Side, Ui.Ink, 0.1f));
+                if (r.Item3 > 0) Ui.FillRound(g, new RectangleF(bar.X, bar.Y, Math.Max(bar.Height, bar.Width * Math.Min(100, r.Item3) / 100f), bar.Height), bar.Height / 2f, r.Item4);
+                y += Ui.S(MeterH);
+            }
         }
 
         static readonly string[] Labels = { "Новий чат", "Налаштування" };
@@ -198,6 +231,12 @@ namespace OpenForge
                 float s = Ui.S(17);
                 Icons.Draw(g, Keys[i], new RectangleF(r.X + Ui.S(12), r.Y + (r.Height - s) / 2f, s, s), sel ? Ui.Blue : Ui.Ink2);
                 Ui.Text(g, Labels[i], sel ? Ui.BodySemi : Ui.Body, new Rectangle(r.X + Ui.S(40), r.Y, r.Width - Ui.S(44), r.Height), sel ? Ui.Blue : Ui.Ink, Ui.Left);
+            }
+            if (ShowMeters)
+            {
+                PaintMeters(g);
+                using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale)))
+                    g.DrawLine(pen, Ui.S(16), MetersTop - Ui.S(10), Width - Ui.S(16), MetersTop - Ui.S(10));
             }
             Ui.Text(g, "ЧАТИ", Ui.Caps, new Rectangle(Ui.S(24), Ui.S(130), Width - Ui.S(40), Ui.S(16)), Ui.Ink3, Ui.Left);
             using (var pen = new Pen(Ui.CardLine, Math.Max(1f, Ui.Scale)))

@@ -105,6 +105,40 @@ namespace OpenForge
             M("huihui_ai/llama3.2-abliterate:3b", "Llama 3.2 3B Abliterated", "small", 2.0f, "Мала Llama без відмов.", true, false, ""),
             M("huihui_ai/qwen3-abliterated:1.7b", "Qwen 3 1.7B Abliterated", "small", 1.1f, "Найменша без цензури.", true, false, ""),
             M("dolphin-phi:2.7b", "Dolphin Phi 2.7B", "small", 1.6f, "Крихітна Dolphin.", true, false, ""),
+            // ── додано у 2.3 (перевірено на ollama.com, листопад 2026) ──
+            // Чат
+            M("mistral:7b", "Mistral 7B", "chat", 4.4f, "Класика від Mistral AI: швидка, проста, добре тримає розмову.", false, false, "інструменти"),
+            M("mistral-nemo:12b", "Mistral Nemo 12B", "chat", 7.1f, "Mistral і NVIDIA: довгий контекст, добре з європейськими мовами.", false, false, "інструменти"),
+            M("phi4:14b", "Phi-4 14B", "chat", 9.1f, "Microsoft: сильна в логіці, математиці й поясненнях.", false, false, ""),
+            M("granite3.3:8b", "Granite 3.3 8B", "chat", 4.9f, "IBM: акуратна й діловита, добре працює з документами.", false, false, "інструменти"),
+            M("hermes3:8b", "Hermes 3 8B", "chat", 4.7f, "Nous Research на основі Llama 3.1: охоче грає ролі, мало відмов.", false, false, "інструменти"),
+            M("cogito:8b", "Cogito 8B", "chat", 4.9f, "Може відповідати одразу або «подумати» глибше. Вміє з інструментами.", false, false, "думає,інструменти"),
+            M("gemma3:27b", "Gemma 3 27B", "chat", 17.0f, "Велика Gemma: дуже розумна, розуміє картинки. Для потужних ПК.", false, false, "зір"),
+            M("wizard-vicuna-uncensored:7b", "Wizard Vicuna 7B Uncensored", "chat", 3.8f, "Стара добра модель без цензури. Легка, відповідає прямо.", true, false, ""),
+            M("wizard-vicuna-uncensored:13b", "Wizard Vicuna 13B Uncensored", "chat", 7.4f, "Більша версія без цензури: розумніша, але повільніша.", true, false, ""),
+            // Зображення (моделі, що розуміють картинки)
+            M("qwen2.5vl:7b", "Qwen 2.5 VL 7B", "chat", 6.0f, "Читає фото, скріни, документи й таблиці на картинках.", false, false, "зір"),
+            M("qwen2.5vl:3b", "Qwen 2.5 VL 3B", "small", 3.2f, "Легка модель для картинок: розпізнає текст і описує фото.", false, false, "зір"),
+            M("qwen3-vl:8b", "Qwen 3 VL 8B", "chat", 6.2f, "Нове покоління Qwen для картинок: точніше бачить деталі й текст.", false, false, "зір"),
+            M("qwen3-vl:4b", "Qwen 3 VL 4B", "small", 3.3f, "Компактна Qwen 3 для картинок — швидка навіть на слабкому ПК.", false, false, "зір"),
+            M("llama3.2-vision:11b", "Llama 3.2 Vision 11B", "chat", 7.8f, "Meta: описує зображення, відповідає на питання про фото.", false, false, "зір"),
+            M("minicpm-v:8b", "MiniCPM-V 8B", "chat", 5.5f, "Сильна в розпізнаванні тексту на фото (OCR) і дрібних деталях.", false, false, "зір"),
+            M("llava:7b", "LLaVA 7B", "chat", 4.7f, "Перша популярна модель «бачить картинки». Проста й легка.", false, false, "зір"),
+            M("llava:13b", "LLaVA 13B", "chat", 8.0f, "Більша LLaVA — точніше описує зображення.", false, false, "зір"),
+            M("moondream:1.8b", "Moondream 2", "small", 1.7f, "Крихітна модель для картинок: коротко описує, що на фото.", false, false, "зір"),
+            M("huihui_ai/qwen2.5-vl-abliterated:7b", "Qwen 2.5 VL 7B Abliterated", "chat", 6.0f, "Qwen 2.5 VL без відмов: описує будь-які зображення.", true, false, "зір"),
+            M("huihui_ai/qwen3-vl-abliterated:8b", "Qwen 3 VL 8B Abliterated", "chat", 6.1f, "Qwen 3 VL без відмов — найновіша модель для картинок без цензури.", true, false, "зір"),
+            M("huihui_ai/qwen3-vl-abliterated:4b", "Qwen 3 VL 4B Abliterated", "small", 3.3f, "Легка модель для картинок без цензури.", true, false, "зір"),
+            // Код
+            M("qwen2.5-coder:3b", "Qwen 2.5 Coder 3B", "code", 1.9f, "Маленький кодер для автодоповнення й простих завдань.", false, false, "інструменти"),
+            M("qwen2.5-coder:1.5b", "Qwen 2.5 Coder 1.5B", "code", 1.0f, "Найлегший кодер — для дуже слабких ПК.", false, false, ""),
+            M("deepcoder:14b", "DeepCoder 14B", "code", 9.0f, "Кодер, що міркує: добре розв'язує алгоритмічні задачі.", false, false, "думає"),
+            // Міркування
+            M("deepseek-r1:7b", "DeepSeek R1 7B", "reasoning", 4.7f, "Міркує крок за кроком (на основі Qwen). Добре з математикою.", false, false, "думає"),
+            M("deepseek-r1:1.5b", "DeepSeek R1 1.5B", "small", 1.1f, "Крихітна модель, що міркує. Для простих задач на слабкому ПК.", false, false, "думає"),
+            M("phi4-mini-reasoning:3.8b", "Phi-4 Mini Reasoning", "reasoning", 3.2f, "Маленька Phi-4, натренована на математиці й логіці.", false, false, "думає"),
+            M("cogito:14b", "Cogito 14B", "reasoning", 9.0f, "Більша Cogito з режимом глибокого міркування.", false, false, "думає,інструменти"),
+
         };
 
         public static CatalogModel Find(string id)

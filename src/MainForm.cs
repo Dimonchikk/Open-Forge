@@ -34,6 +34,8 @@ namespace OpenForge
         string ollamaVersion;
         List<ModelInfo> models = new List<ModelInfo>();
         bool polling, firstPoll = true;
+        System.Threading.Timer monitorTimer;
+        volatile bool minimized;
         readonly System.Windows.Forms.Timer poll = new System.Windows.Forms.Timer { Interval = 3000 };
         readonly System.Windows.Forms.Timer updateTimer = new System.Windows.Forms.Timer { Interval = (int)Updates.Every.TotalMilliseconds };
 
@@ -117,6 +119,13 @@ namespace OpenForge
             base.OnShown(e);
             Poll();
             poll.Start();
+            // Навантаження ПК у боковому меню — опитуємо у фоні раз на 1,5 с (лише коли вікно не згорнуте).
+            monitorTimer = new System.Threading.Timer(_ =>
+            {
+                if (minimized) return;
+                PcMonitor.Sample();
+                try { BeginInvoke((Action)sidebar.RefreshMeters); } catch { }
+            }, null, 0, 1500);
             DetectHardware();
             CheckUpdates();
             updateTimer.Start();
@@ -126,6 +135,7 @@ namespace OpenForge
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             SaveSystemPrompt();
+            if (monitorTimer != null) monitorTimer.Dispose();
             if (stream != null) stream.Cancel();
             SystemEvents.UserPreferenceChanged -= OnSystemTheme;
             base.OnFormClosing(e);
@@ -158,6 +168,7 @@ namespace OpenForge
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
+            minimized = WindowState == FormWindowState.Minimized;
             if (WindowState == FormWindowState.Minimized || pages[pages.Length - 1] == null) return;   // ще будується
             int w = ClientSize.Width, h = ClientSize.Height, side = Ui.S(SideW);
             sidebar.Bounds = new Rectangle(0, 0, side, h);
