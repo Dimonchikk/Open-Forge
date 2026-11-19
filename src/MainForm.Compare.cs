@@ -262,6 +262,7 @@ namespace OpenForge
                 string t = s.TakeIfChanged(ref seen);
                 c.Seen = seen;
                 if (t != null) { c.Answer.Raw = t; c.List.Changed(c.Answer); }
+                else if (c.Answer.Display.Length == 0) c.List.Invalidate();
                 if (!s.Done) { any = true; continue; }
                 // Готово: підсумок під відповіддю.
                 c.Stream = null;

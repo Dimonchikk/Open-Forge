@@ -491,6 +491,7 @@ namespace OpenForge
                 answer.Raw = t;
                 chatList.Changed(answer);
             }
+            else if (answer.Display.Length == 0) chatList.Invalidate();   // крапки й таймер «Думає над відповіддю»
             FinishIfDone(false);
         }
 

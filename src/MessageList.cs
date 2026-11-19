@@ -74,6 +74,7 @@ namespace OpenForge
         public bool Step;                            // рядок зі списку кроків агента (з відступом, блідий)
         public List<string> StepList;                // для Steps: усі кроки групи
         public string Summary;                       // для Steps: підсумок «Створив файлів: 3 · …»
+        public bool Live;                            // «Думає над відповіддю» — поки модель ще нічого не написала
         public string Str = "";
         public int Start;                            // позиція в ChatMessage.Shown
         public List<int> Lines = new List<int> { 0 };  // початки рядків екрана в Str
@@ -241,7 +242,7 @@ namespace OpenForge
         {
             int w = TextW(m);
             string disp = m.Display;
-            if (disp.Length == 0 && m.Streaming) disp = "Думає…";
+            bool thinking = disp.Length == 0 && m.Streaming;   // модель ще нічого не написала
             bool foot = HasFoot(m);
             int nImg = m.Images != null ? m.Images.Count : 0;
             if (disp == m.Shown && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages) return;
@@ -323,10 +324,15 @@ namespace OpenForge
                 paras.Add(new Para { Kind = kind, Str = t, Start = off });
             }
             if (imagesPara != null && !m.IsUser) paras.Add(imagesPara);   // скріншоти агента — під текстом
+            if (thinking)
+            {
+                paras.Clear();
+                paras.Add(new Para { Kind = Para.Steps, Str = "", Start = 0, Live = true, StepList = new List<string>(), Summary = "Думає над відповіддю" });
+            }
 
             // Підсумки груп кроків.
             Para lastSteps = null;
-            foreach (var p in paras) if (p.Kind == Para.Steps) { p.Summary = StepsSummary(p.StepList); lastSteps = p; }
+            foreach (var p in paras) if (p.Kind == Para.Steps && !p.Live) { p.Summary = StepsSummary(p.StepList); lastSteps = p; }
             if (m.Streaming && lastSteps != null && lastSteps.StepList.Count > 0)
             {
                 string cur = lastSteps.StepList[lastSteps.StepList.Count - 1];
@@ -628,7 +634,7 @@ namespace OpenForge
                     }
                     else Icons.Draw(g, "folder", new RectangleF(sr.X + Ui.S(11), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink2);
                     Ui.Text(g, SummaryText(m, p), Ui.Small, new Rectangle(sr.X + Ui.S(36), sr.Y, sr.Width - Ui.S(62), sr.Height), Ui.Ink2, Ui.Left);
-                    Icons.Draw(g, m.StepsOpen ? "chevron" : "chevron-right", new RectangleF(sr.Right - Ui.S(22), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink3);
+                    if (!p.Live) Icons.Draw(g, m.StepsOpen ? "chevron" : "chevron-right", new RectangleF(sr.Right - Ui.S(22), sr.Y + (sr.Height - ic) / 2f, ic, ic), Ui.Ink3);
                     continue;
                 }
                 int fi = p.Kind == Para.CodeLine ? 1 : 0;
@@ -691,7 +697,7 @@ namespace OpenForge
         }
 
         // Рядок-підсумок, що «живе», поки агент працює: поточний крок і час.
-        static bool IsLive(ChatMessage m, Para p) { return m.Streaming && p.Summary != null && p.Summary.StartsWith("Працює: "); }
+        static bool IsLive(ChatMessage m, Para p) { return m.Streaming && (p.Live || (p.Summary != null && p.Summary.StartsWith("Працює: "))); }
 
         static string SummaryText(ChatMessage m, Para p)
         {
@@ -913,7 +919,7 @@ namespace OpenForge
                     }
                 }
                 if (v.P.Kind == Para.CodeHead && CodeCopyRect(v).Contains(p)) { obj = v.P; key = "code"; return true; }
-                if (v.P.Kind == Para.Steps && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
+                if (v.P.Kind == Para.Steps && !v.P.Live && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
             }
             return false;
         }
