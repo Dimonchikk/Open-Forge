@@ -103,6 +103,8 @@ namespace OpenForge
                 if (m.Files != null && m.Files.Count > 0)
                     d["files"] = m.Files.Select(f => (object)new Dictionary<string, object> { { "name", f.Name }, { "text", f.Text }, { "chars", f.Chars } }).ToArray();
                 if (m.ThinkSec > 0) d["think_sec"] = Math.Round(m.ThinkSec, 1);
+                if (m.StepDetails != null && m.StepDetails.Count > 0)
+                    d["steps"] = m.StepDetails.Select(x => (object)new Dictionary<string, object> { { "kind", x.Kind }, { "text", x.Text ?? "" }, { "path", x.Path ?? "" }, { "ok", x.Ok }, { "shot", x.Shot } }).ToArray();
                 list.Add(d);
             }
             if (list.Count == 0) { Delete(id); return; }   // усе видалили — чату більше немає
@@ -146,6 +148,16 @@ namespace OpenForge
                             .ToList();
                     if (cm.Files != null && cm.Files.Count == 0) cm.Files = null;
                     if (m.TryGetValue("think_sec", out ts) && ts != null) try { cm.ThinkSec = Convert.ToDouble(ts, CultureInfo.InvariantCulture); } catch { }
+                    object steps;
+                    if (m.TryGetValue("steps", out steps) && steps is object[])
+                        cm.StepDetails = ((object[])steps).OfType<Dictionary<string, object>>().Select(x =>
+                        {
+                            object ok, shot;
+                            var sd = new StepDetail { Kind = S(x, "kind") ?? "", Text = S(x, "text") ?? "", Path = S(x, "path") ?? "" };
+                            sd.Ok = !x.TryGetValue("ok", out ok) || !(ok is bool) || (bool)ok;
+                            if (x.TryGetValue("shot", out shot) && shot != null) try { sd.Shot = Convert.ToInt32(shot, CultureInfo.InvariantCulture); } catch { }
+                            return sd;
+                        }).ToList();
                     res.Add(cm);
                 }
             return res;

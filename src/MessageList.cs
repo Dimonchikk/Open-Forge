@@ -25,6 +25,11 @@ namespace OpenForge
         public double Tag;           // швидкість (для «Порівняння»)
         public List<string> Images;  // прикріплені картинки (JPEG base64)
         public List<FileAttachment> Files;   // прикріплені файли (їхній текст іде моделі)
+        public List<StepDetail> StepDetails; // подробиці кроків агента (по порядку рядків «▸ …»)
+        internal readonly HashSet<int> OpenSteps = new HashSet<int>();   // які кроки розгорнуті
+        internal Dictionary<int, Bitmap> StepPics;                       // мініатюри скріншотів кроків (ключ: -1-індекс — маленька, індекс — велика)
+        internal string LayoutOpen;
+        internal int LayoutDetails;
         internal List<Bitmap> Thumbs;
         public bool Streaming;
         public bool StepsOpen;       // кроки агента розгорнуті
@@ -106,9 +111,20 @@ namespace OpenForge
     }
 
     // Один рядок вихідного тексту (або шматок дуже довгого рядка), розкладений на рядки екрана.
+    // Подробиці одного кроку агента: що саме він зробив і що отримав.
+    class StepDetail
+    {
+        public string Kind, Text, Path;   // Kind — назва інструмента (create_file, run_command, …)
+        public bool Ok;
+        public int Shot = -1;              // номер скріншота в Images повідомлення (-1 — немає)
+    }
+
     class Para
     {
-        public const int Text = 0, CodeLine = 1, CodeHead = 2, CodeFoot = 3, Steps = 4, Images = 5, Think = 6, Table = 7, Rule = 8, Files = 9;
+        public const int Text = 0, CodeLine = 1, CodeHead = 2, CodeFoot = 3, Steps = 4, Images = 5, Think = 6, Table = 7, Rule = 8, Files = 9, StepPic = 10;
+        public int StepIdx = -1;                     // номер кроку агента (для рядка кроку й його подробиць)
+        public bool NoSel;                           // подробиці кроку: не виділяються мишею (копіюються кнопкою)
+        public Bitmap Pic;                           // для StepPic
         public int Kind;
         public bool Step;                            // рядок зі списку кроків агента (з відступом, блідий)
         public bool Thought;                         // рядок міркувань моделі (блідий, не виділяється)
@@ -367,10 +383,15 @@ namespace OpenForge
             bool foot = HasFoot(m);
             int nImg = m.Images != null ? m.Images.Count : 0, nFiles = m.Files != null ? m.Files.Count : 0;
             int thinkKey = think.Length * 2 + (m.Streaming && m.InThink ? 1 : 0);
-            if (disp == m.LayoutDisp && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages &&
+            string openKey = string.Join(",", m.OpenSteps.Select(x => x.ToString()).ToArray());
+            int nDetails = m.StepDetails != null ? m.StepDetails.Count : 0;
+            if (openKey == m.LayoutOpen && nDetails == m.LayoutDetails && disp == m.LayoutDisp && w == m.LayoutW && foot == m.LayoutFoot && m.StepsOpen == m.LayoutSteps && nImg == m.LayoutImages &&
                 thinkKey == m.LayoutThink && m.ThinkOpen == m.LayoutThinkOpen && nFiles == m.LayoutFiles) return;
             m.LayoutImages = nImg;
             m.LayoutFiles = nFiles;
+            m.LayoutOpen = openKey;
+            m.LayoutDetails = nDetails;
+            int stepNo = 0;
             bool waiting = disp.Length == 0 && m.Streaming && think.Length == 0;   // модель ще нічого не написала
 
             // 1. Розбити на абзаци: рядки тексту, блоки коду між ```, таблиці, заголовки, списки (лише у відповідях моделі).
@@ -428,7 +449,12 @@ namespace OpenForge
                         paras.Add(steps);
                     }
                     steps.StepList.Add(st);
-                    if (m.StepsOpen) paras.Add(new Para { Kind = Para.Text, Str = st, Start = start, Step = true, Indent = StepIndent });
+                    int k = stepNo++;
+                    if (m.StepsOpen)
+                    {
+                        paras.Add(new Para { Kind = Para.Text, Str = st, Start = start, Step = true, Indent = StepIndent, StepIdx = k });
+                        if (m.OpenSteps.Contains(k)) AddStepDetail(m, k, paras);
+                    }
                     continue;
                 }
                 if (trimmed.Length > 0) steps = null;
@@ -555,11 +581,12 @@ namespace OpenForge
                 else if (p.Kind == Para.Steps || p.Kind == Para.Think) p.H = Ui.S(36);
                 else if (p.Kind == Para.Images) { p.H = Ui.S(110) + Ui.S(8); maxW = Math.Max(maxW, imagesW); }
                 else if (p.Kind == Para.Files) { LayoutFiles(m, p, w); maxW = Math.Max(maxW, p.W); }
+                else if (p.Kind == Para.StepPic) p.H = p.Pic.Height + Ui.S(10);
                 else if (p.Kind == Para.Rule) { if (p.Pad < 0) p.Pad = 0; else p.H = Ui.S(20); }
                 else if (p.Kind == Para.Table) { LayoutTable(p, w); maxW = Math.Max(maxW, p.W); }
                 else
                 {
-                    int lw = p.Kind == Para.CodeLine ? w - 2 * CodePad : w - p.Indent - p.Hang;
+                    int lw = p.Kind == Para.CodeLine ? w - 2 * CodePad - p.Indent : w - p.Indent - p.Hang;
                     Para prev;
                     string key = Key(p);
                     if (p.Str.Length > 0 && old.TryGetValue(key, out prev)) { p.Lines = prev.Lines; p.W = prev.W; }
@@ -583,9 +610,53 @@ namespace OpenForge
             m.Height = h + (bubble ? 2 * PadY : 0) + (foot ? FootH + Ui.S(4) : 0);
         }
 
+        // Подробиці розгорнутого кроку: скріншот і/або блок з командою та виводом, вмістом файлу чи помилкою.
+        void AddStepDetail(ChatMessage m, int k, List<Para> paras)
+        {
+            if (m.StepDetails == null || k >= m.StepDetails.Count) return;
+            var d = m.StepDetails[k];
+            int ind = StepIndent + Ui.S(14);
+            var big = StepPicture(m, d, false);
+            if (big != null) paras.Add(new Para { Kind = Para.StepPic, Str = "", Pic = big, Indent = ind, StepIdx = k, Pad = Ui.S(4) });
+            if (string.IsNullOrEmpty(d.Text)) return;
+            string label = !d.Ok ? "помилка" : d.Kind == "run_command" || d.Kind == "start_program" ? "команда" :
+                d.Kind == "create_file" || d.Kind == "read_file" ? (string.IsNullOrEmpty(d.Path) ? "файл" : d.Path) : "результат";
+            paras.Add(new Para { Kind = Para.CodeHead, Str = "", Lang = label, Code = d.Text, Indent = ind, NoSel = true, StepIdx = k });
+            var lines = d.Text.Split('\n');
+            int max = Math.Min(lines.Length, 40);
+            for (int i = 0; i < max; i++)
+                paras.Add(new Para { Kind = Para.CodeLine, Fi = 1, Str = lines[i].TrimEnd('\r').Replace("\t", "    "), Indent = ind, NoSel = true, StepIdx = k });
+            if (lines.Length > max)
+                paras.Add(new Para { Kind = Para.CodeLine, Fi = 1, Str = "… ще " + (lines.Length - max) + " рядків — «Копіювати» скопіює все", Indent = ind, NoSel = true, StepIdx = k });
+            paras.Add(new Para { Kind = Para.CodeFoot, Str = "", Indent = ind, StepIdx = k });
+        }
+
+        // Скріншот кроку: маленький (праворуч у рядку кроку) або великий (у розгорнутому кроці).
+        Bitmap StepPicture(ChatMessage m, StepDetail d, bool small)
+        {
+            if (d.Shot < 0 || m.Images == null || d.Shot >= m.Images.Count) return null;
+            if (m.StepPics == null) m.StepPics = new Dictionary<int, Bitmap>();
+            int key = small ? -1 - d.Shot : d.Shot;
+            Bitmap b;
+            if (m.StepPics.TryGetValue(key, out b)) return b;
+            var img = Pictures.Decode(m.Images[d.Shot]);
+            if (img == null) return null;
+            using (img) b = small ? Pictures.Thumb(img, Ui.S(22), Ui.S(44)) : Pictures.Thumb(img, Math.Min(Ui.S(300), img.Height), Ui.S(520));
+            m.StepPics[key] = b;
+            return b;
+        }
+
+        StepDetail DetailOf(ChatMessage m, int k) { return m.StepDetails != null && k >= 0 && k < m.StepDetails.Count ? m.StepDetails[k] : null; }
+
+        // Рядок кроку (для кліку й підсвітки): від тексту до шеврона.
+        Rectangle StepRowRect(PV v)
+        {
+            return new Rectangle(v.X - Ui.S(8), v.Y - Ui.S(1), Math.Min(v.W + Ui.S(8), v.P.W + Ui.S(78)), LH(v.P) + Ui.S(2));
+        }
+
         static string Key(Para p)
         {
-            string k = p.Kind + "\u0001" + p.Fi + "\u0001" + p.Indent + "\u0001" + p.Hang + "\u0001" + (p.Thought ? "t" : p.Step ? "s" : "") + "\u0001" + p.Str;
+            string k = p.Kind + "\u0001" + (p.NoSel ? "n" : "") + p.Fi + "\u0001" + p.Indent + "\u0001" + p.Hang + "\u0001" + (p.Thought ? "t" : p.Step ? "s" : "") + "\u0001" + p.Str;
             if (p.Sty != null) { var c = new char[p.Sty.Length]; for (int i = 0; i < c.Length; i++) c[i] = (char)('0' + p.Sty[i]); k += "\u0001" + new string(c); }
             return k;
         }
@@ -873,8 +944,8 @@ namespace OpenForge
                     if (ty + p.H >= 0 && ty <= Height)
                     {
                         bool code = p.Kind == Para.CodeLine;
-                        int ind = code ? CodePad : p.Indent;
-                        yield return new PV { M = m, Mi = mi, P = p, X = tx + ind, Y = ty + p.Pad, W = m.LayoutW - (code ? 2 * CodePad : ind), Box = r };
+                        int ind = code ? CodePad + p.Indent : p.Indent;
+                        yield return new PV { M = m, Mi = mi, P = p, X = tx + ind, Y = ty + p.Pad, W = m.LayoutW - (code ? 2 * CodePad + p.Indent : ind), Box = r };
                     }
                     ty += p.H;
                     if (ty > Height) break;
@@ -1074,6 +1145,18 @@ namespace OpenForge
                     continue;
                 }
                 if (p.Kind == Para.Table) { PaintTable(g, v); continue; }
+                if (p.Kind == Para.StepPic)
+                {
+                    var pr = new Rectangle(v.X, v.Y, p.Pic.Width, p.Pic.Height);
+                    using (var path = Ui.Round(pr, Ui.S(8)))
+                    {
+                        g.SetClip(path);
+                        g.DrawImage(p.Pic, pr);
+                        g.ResetClip();
+                        using (var pen = new Pen(hoverObj == m && hoverKey == "steppic:" + p.StepIdx ? Ui.Blue : Ui.Separator, Math.Max(1f, Ui.Scale))) g.DrawPath(pen, path);
+                    }
+                    continue;
+                }
                 if (p.Kind == Para.Steps || p.Kind == Para.Think)
                 {
                     bool th = p.Kind == Para.Think;
@@ -1104,12 +1187,30 @@ namespace OpenForge
 
                 Color fore = m.IsUser ? Color.White : m.Role == "error" ? Ui.Red : p.Thought ? Ui.Ink3 : (p.Step || p.Quote) ? Ui.Ink2 : Ui.Ink;
                 int lh = LH(p);
+                var sd = p.Step ? DetailOf(m, p.StepIdx) : null;
+                if (sd != null)
+                {
+                    // Рядок кроку, що розгортається: підсвітка під мишею, шеврон і мініатюра скріншота.
+                    bool open = m.OpenSteps.Contains(p.StepIdx);
+                    var rr = StepRowRect(v);
+                    if (hoverObj == m && hoverKey == "step:" + p.StepIdx) Ui.FillRound(g, rr, Ui.S(7), Ui.Fill);
+                    if (!sd.Ok) fore = Ui.Mix(Ui.Ink2, Ui.Red, 0.7f);
+                    float cs = Ui.S(11);
+                    int cx = v.X + p.W + Ui.S(8);
+                    if (p.Lines.Count == 1) Icons.Draw(g, open ? "chevron" : "chevron-right", new RectangleF(cx, v.Y + (lh - cs) / 2f, cs, cs), Ui.Ink3);
+                    var thumb = StepPicture(m, sd, true);
+                    if (thumb != null && !open)
+                    {
+                        var tr = new Rectangle(cx + Ui.S(18), v.Y + (lh - thumb.Height) / 2, thumb.Width, thumb.Height);
+                        using (var path = Ui.Round(tr, Ui.S(4))) { g.SetClip(path); g.DrawImage(thumb, tr); g.ResetClip(); }
+                    }
+                }
                 if (p.Quote)
                     using (var b = new SolidBrush(Ui.Mix(Ui.Bg, Ui.Ink, 0.22f))) g.FillRectangle(b, v.X - Ui.S(12), v.Y, Ui.S(3), p.TextH);
                 if (p.Thought)
                     using (var b = new SolidBrush(Ui.Mix(Ui.Bg, Ui.Purple, 0.35f))) g.FillRectangle(b, v.X - Ui.S(10), v.Y, Math.Max(1, Ui.S(2)), p.TextH);
                 int s0 = 0, s1 = 0;
-                bool hasSel = !p.Thought && SelRange(v.Mi, out s0, out s1);
+                bool hasSel = !p.Thought && !p.NoSel && SelRange(v.Mi, out s0, out s1);
                 for (int li = 0; li < p.Lines.Count; li++)
                 {
                     int y = v.Y + li * lh;
@@ -1387,7 +1488,7 @@ namespace OpenForge
             int bestD = int.MaxValue;
             foreach (var v in VisibleParas())
             {
-                if (v.P.Kind > Para.CodeLine || v.P.Thought) continue;
+                if (v.P.Kind > Para.CodeLine || v.P.Thought || v.P.NoSel) continue;
                 int d = pt.Y < v.Y ? v.Y - pt.Y : pt.Y >= v.Y + v.P.TextH ? pt.Y - (v.Y + v.P.TextH) + 1 : 0;
                 if (d < bestD) { bestD = d; best = v; }
                 if (d == 0) break;
@@ -1475,6 +1576,8 @@ namespace OpenForge
                 if (v.P.Kind == Para.CodeHead && Editable && IsHtml(v.P) && CodePreviewRect(v).Contains(p)) { obj = v.P; key = "preview"; return true; }
                 if (v.P.Kind == Para.Steps && !v.P.Live && StepsRect(v).Contains(p)) { obj = v.M; key = "steps"; return true; }
                 if (v.P.Kind == Para.Think && StepsRect(v).Contains(p)) { obj = v.M; key = "think"; return true; }
+                if (v.P.Step && DetailOf(v.M, v.P.StepIdx) != null && StepRowRect(v).Contains(p)) { obj = v.M; key = "step:" + v.P.StepIdx; return true; }
+                if (v.P.Kind == Para.StepPic && new Rectangle(v.X, v.Y, v.P.Pic.Width, v.P.Pic.Height).Contains(p)) { obj = v.M; key = "steppic:" + v.P.StepIdx; return true; }
             }
             return false;
         }
@@ -1482,7 +1585,7 @@ namespace OpenForge
         bool OverText(Point p)
         {
             foreach (var v in VisibleParas())
-                if (v.P.Kind <= Para.CodeLine && !v.P.Thought && p.Y >= v.Y && p.Y < v.Y + v.P.TextH && p.X >= v.X - Ui.S(4) && p.X <= v.X + v.W) return true;
+                if (v.P.Kind <= Para.CodeLine && !v.P.Thought && !v.P.NoSel && p.Y >= v.Y && p.Y < v.Y + v.P.TextH && p.X >= v.X - Ui.S(4) && p.X <= v.X + v.W) return true;
             return false;
         }
 
@@ -1597,6 +1700,21 @@ namespace OpenForge
             else if (key == "delete") { if (DeleteMessage != null) DeleteMessage((ChatMessage)obj); }
             else if (key == "regen") { if (Regenerate != null) Regenerate((ChatMessage)obj); }
             else if (key == "site") { if (PreviewFile != null) PreviewFile(((ChatMessage)obj).Site); }
+            else if (key.StartsWith("step:"))
+            {
+                var sm = (ChatMessage)obj;
+                int k = int.Parse(key.Substring(5));
+                if (!sm.OpenSteps.Remove(k)) sm.OpenSteps.Add(k);
+                ClearSelection();
+                Recount();
+                ScrollTo(offset);
+            }
+            else if (key.StartsWith("steppic:"))
+            {
+                var sm = (ChatMessage)obj;
+                var d = DetailOf(sm, int.Parse(key.Substring(8)));
+                if (d != null && d.Shot >= 0 && sm.Images != null && d.Shot < sm.Images.Count) Pictures.Open(sm.Images[d.Shot]);
+            }
             else if (key == "think")
             {
                 var tm = (ChatMessage)obj;

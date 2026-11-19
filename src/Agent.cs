@@ -271,6 +271,45 @@ namespace OpenForge
         readonly List<string> shots = new List<string>();
         readonly List<Process> started = new List<Process>();
         string pendingShot;                             // картинка, яку треба показати моделі після відповіді інструмента
+        readonly List<StepDetail> stepDetails = new List<StepDetail>();
+        int stepsVersion;
+
+        // Подробиці кроків (команда й вивід, вміст файлу, скріншот) — для розгортання кроку в чаті.
+        public List<StepDetail> StepDetails(ref int seenVersion)
+        {
+            lock (sync)
+            {
+                if (seenVersion == stepsVersion) return null;
+                seenVersion = stepsVersion;
+                return new List<StepDetail>(stepDetails);
+            }
+        }
+
+        static string Cap(string s, int max)
+        {
+            s = (s ?? "").Replace("\r\n", "\n").TrimEnd();
+            return s.Length > max ? s.Substring(0, max) + "\n… (обрізано, ще " + (s.Length - max) + " символів)" : s;
+        }
+
+        void AddDetail(string name, Dictionary<string, object> args, bool ok, string result)
+        {
+            string body;
+            if (!ok) body = result;
+            else switch (name)
+            {
+                case "create_file": body = Arg(args, "content"); break;
+                case "run_command": case "start_program":
+                    body = "> " + Arg(args, "command") + (result.Trim().Length > 0 ? "\n" + result.Trim() : ""); break;
+                default: body = result; break;
+            }
+            var d = new StepDetail { Kind = name, Ok = ok, Text = Cap(body, 8000), Path = Arg(args, "path") };
+            lock (sync)
+            {
+                if (pendingShot != null) d.Shot = shots.Count - 1;
+                stepDetails.Add(d);
+                stepsVersion++;
+            }
+        }
         int shotsVersion;
 
         // Скріншоти, зроблені агентом (для показу в чаті).
@@ -464,6 +503,7 @@ namespace OpenForge
                         if (nl >= 0) first = first.Substring(0, nl);
                         if (first.Length > 140) first = first.Substring(0, 140) + "…";
                         Write(ok ? "  ✓" + (name == "run_command" ? "  " + first : "") : "  ✗ " + first);
+                        AddDetail(name, args, ok, result);
                         messages.Add(new Dictionary<string, object> { { "role", "tool" }, { "content", result }, { "tool_name", name } });
                         if (pendingShot != null && ModelSeesImages)   // показати моделі, що вийшло
                             messages.Add(new Turn("user", "Ось скріншот результату (" + title + "). Перевір, чи все виглядає правильно.") { Images = new List<string> { pendingShot } }.ToJson());
