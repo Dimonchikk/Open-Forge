@@ -366,6 +366,10 @@ namespace OpenForge
             }
         }
 
+        // Для завантаження моделей з Hugging Face (HfImport).
+        public static HttpWebRequest RequestPublic(string path, string method, int timeoutMs) { return Request(path, method, timeoutMs); }
+        public static HttpWebRequest PostJsonPublic(string path, object body, int timeoutMs) { return PostJson(path, "POST", body, timeoutMs); }
+
         static HttpWebRequest PostJson(string path, string method, object body, int timeoutMs)
         {
             byte[] data = Encoding.UTF8.GetBytes(Json.Serialize(body));

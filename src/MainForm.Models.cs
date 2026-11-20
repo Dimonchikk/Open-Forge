@@ -11,7 +11,7 @@ namespace OpenForge
 {
     partial class MainForm
     {
-        static readonly string[] Purposes = { "Усі", "Чат", "Код", "Зображення", "Міркування", "Переклад", "Швидкі", "Встановлені" };
+        static readonly string[] Purposes = { "Усі", "Чат", "Код", "Зображення", "Міркування", "Переклад", "Швидкі", "Встановлені", "Hugging Face" };
         static readonly string[] Censors = { "Будь-які", "З цензурою", "Без цензури" };
         static readonly string[] Fits = { "Усі", "Запуститься", "Піде нормально", "Тільки швидкі" };
         static readonly string[] Sorts = { "Рекомендовані", "Від сильної до слабкої", "Від слабкої до сильної", "Від легкої до важкої", "Від важкої до легкої", "За назвою" };
@@ -175,6 +175,7 @@ namespace OpenForge
                 case 5: list = list.Where(m => m.Category == "translation"); break;
                 case 6: list = list.Where(m => m.Category == "small"); break;
                 case 7: list = list.Where(m => m.Installed); break;
+                case 8: list = list.Where(m => m.GgufUrl != null); break;
             }
             if (c == 1) list = list.Where(m => !m.Uncensored);
             if (c == 2) list = list.Where(m => m.Uncensored);
@@ -235,7 +236,8 @@ namespace OpenForge
                     pullErrors.Remove(m.Id);
                     var job = new PullJob(m.Id);
                     pulls[m.Id] = job;
-                    var t = new Thread(() => Ollama.Pull(job));
+                    // Моделі з Hugging Face Open Forge завантажує сам і передає в Ollama.
+                    var t = m.GgufUrl != null ? new Thread(() => HfImport.Run(job, m.GgufUrl, m.GgufBytes)) : new Thread(() => Ollama.Pull(job));
                     t.IsBackground = true;
                     t.Start();
                     pullTimer.Start();

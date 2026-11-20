@@ -19,6 +19,8 @@ namespace OpenForge
         public string[] Tags;
         public bool Installed;            // заповнюється зі списку Ollama
         public bool Known = true;         // false — модель встановлена, але її немає в каталозі
+        public string GgufUrl;            // модель з Hugging Face, яку Open Forge завантажує й додає в Ollama сам
+        public long GgufBytes;
 
         public bool Vision { get { return Tags.Contains("зір"); } }
         public bool Thinks { get { return Tags.Contains("думає"); } }
@@ -86,8 +88,36 @@ namespace OpenForge
             };
         }
 
+        // Модель-файл з Hugging Face: id — коротка назва в Ollama, file — назва .gguf у репозиторії.
+        static CatalogModel H(string id, string name, string repo, string file, long bytes, string desc, bool uncensored, string tags)
+        {
+            var m = M(id, name, "hf", (float)Math.Round(bytes / 1e9, 1), desc, uncensored, false, tags);
+            m.GgufUrl = "https://huggingface.co/" + repo + "/resolve/main/" + file;
+            m.GgufBytes = bytes;
+            return m;
+        }
+
+        const string NeoRepo = "DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF";
+        const string NeoFile = "Qwen3.8-27B-TurboFCFusion-735-882-Here-Uncen-NEO-CODER-MAX-";
+
         public static readonly List<CatalogModel> All = new List<CatalogModel>
         {
+            // ── Hugging Face: Qwen 3.8 27B NEO Coder Max від DavidAU (розміри — з файлів репозиторію) ──
+            H("neo-coder-max:27b-iq2_m", "NEO Coder Max 27B · IQ2_M", NeoRepo, NeoFile + "IQ2_M.gguf", 11673303648L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Найсильніше стиснення: найменша, але помітно гірша якість.", true, "думає,інструменти,код"),
+            H("neo-coder-max:27b-iq3_m", "NEO Coder Max 27B · IQ3_M", NeoRepo, NeoFile + "IQ3_M.gguf", 14080727648L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Легка версія з нормальною якістю.", true, "думає,інструменти,код"),
+            H("neo-coder-max:27b-iq4_xs", "NEO Coder Max 27B · IQ4_XS", NeoRepo, NeoFile + "IQ4_XS.gguf", 16582359648L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Добра якість, трохи менша за Q4_K_M.", true, "думає,інструменти,код"),
+            H("neo-coder-max:27b-q4_k_m", "NEO Coder Max 27B · Q4_K_M", NeoRepo, NeoFile + "Q4_K_M.gguf", 18047253088L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Звичайний вибір: добра якість і розумний розмір.", true, "думає,інструменти,код"),
+            H("neo-coder-max:27b-q5_k_m", "NEO Coder Max 27B · Q5_K_M", NeoRepo, NeoFile + "Q5_K_M.gguf", 20730952288L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Дуже добра якість.", true, "думає,інструменти,код"),
+            H("neo-coder-max:27b-q6_k", "NEO Coder Max 27B · Q6_K", NeoRepo, NeoFile + "Q6_K.gguf", 23582382688L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Майже без втрат якості.", true, "думає,інструменти,код"),
+            H("neo-coder-max:27b-q8_0", "NEO Coder Max 27B · Q8_0", NeoRepo, NeoFile + "Q8_0.gguf", 29787699808L,
+              "Qwen 3.8 27B без цензури від DavidAU для коду. Повна якість, найбільший файл.", true, "думає,інструменти,код"),
+
             M("qwen3:8b", "Qwen 3 8B", "chat", 5.2f, "Сильна мультимовна модель, добре знає українську. Вміє «подумати» перед відповіддю.", false, false, "думає,інструменти"),
             M("qwen3.5:9b", "Qwen 3.5 9B", "chat", 7.6f, "Нове покоління Qwen: розуміє картинки, думає, працює з інструментами.", false, false, "думає,зір,інструменти,код"),
             M("llama3.1:8b", "Llama 3.1 8B", "chat", 4.9f, "Класика від Meta. Надійна для щоденних питань і текстів.", false, false, "інструменти"),
@@ -215,11 +245,6 @@ namespace OpenForge
             M("qwen3.8:27b", "Qwen 3.8 27B", "chat", 18.0f, "Найновіша Qwen: код, агенти, дослідження, картинки й відео. Думає перед відповіддю.", false, false, "думає,зір,інструменти,код"),
             M("huihui_ai/Qwen3.8-abliterated:27b", "Qwen 3.8 27B Abliterated", "chat", 18.0f, "Найновіша Qwen без відмов: код, агенти, картинки. Одна з найсильніших моделей без цензури.", true, false, "думає,зір,інструменти,код"),
             M("huihui_ai/Qwen3.8-abliterated:27b-q3_K", "Qwen 3.8 27B Abliterated (легша)", "chat", 14.0f, "Та сама Qwen 3.8 без відмов, сильніше стиснута: менше пам'яті, трохи гірша якість.", true, false, "думає,зір,інструменти,код"),
-            // Розміри — з файлів на Hugging Face (Q4_K_M 18,0 ГБ, IQ3_M 14,1 ГБ).
-            M("hf.co/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF:Q4_K_M", "Qwen 3.8 27B NEO Coder Max (Heretic)", "code", 18.0f,
-              "Збірка DavidAU на основі Qwen 3.8 27B без цензури, налаштована на код. Завантажується з Hugging Face.", true, false, "думає,інструменти,код"),
-            M("hf.co/DavidAU/Qwen3.8-27B-TURBO-Fable-Cold-Fusion-735-882-Heretic-Uncensored-NEO-CODER-MAX-MTP-GGUF:IQ3_M", "Qwen 3.8 27B NEO Coder Max (Heretic, легша)", "code", 14.1f,
-              "Та сама модель DavidAU, сильніше стиснута: на 4 ГБ менша, трохи гірша якість.", true, false, "думає,інструменти,код"),
             M("eriktonon/qwen3.8-uncensored:9b", "Qwen 3.8 9B Uncensored", "chat", 6.4f, "Мала Qwen 3.8 без цензури (дистиляція від спільноти). Бачить картинки, швидка на 8 ГБ.", true, false, "зір"),
             // Нові
             M("mimo-v2.6:9b", "Xiaomi MiMo V2.6 9B", "code", 6.6f, "Модель Xiaomi для коду й агентів: думає, бачить картинки, пам'ять на 256K.", false, false, "думає,зір,інструменти"),
