@@ -30,6 +30,12 @@ namespace OpenForge
         // Агент: якщо обрано папку, повідомлення йдуть агенту, який працює з файлами в ній.
         string agentFolder;
         AgentPermission agentPerm = AgentPermission.Auto;
+
+        // Чернетка (недописане повідомлення) і вибрана папка — окремі для кожного чату, щоб не «перестрибували»
+        // між чатами. Ключ — id чату (або "" для ще не збереженого нового чату). Тримаємо в пам'яті сесії.
+        class Draft { public string Text = ""; public string Folder; public AgentPermission Perm; }
+        readonly Dictionary<string, Draft> drafts = new Dictionary<string, Draft>();
+        string draftKey = "";
         SidePanel sidePanel;
         PillBtn thinkBtn;
         string thinkAsked;   // для якої моделі вже питали Ollama, чи вона міркує
@@ -323,25 +329,79 @@ namespace OpenForge
             chatInput.Box.Focus();
         }
 
-        void SetAgent(string folder, AgentPermission perm)
+        void SetAgent(string folder, AgentPermission perm) { SetAgent(folder, perm, true); }
+
+        void SetAgent(string folder, AgentPermission perm, bool persist)
         {
             if (folder != null && folder.Length == 0) folder = null;
             agentFolder = folder;
             agentPerm = perm;
             if (folder != null)
             {
-                Settings.Set("AgentFolder", folder);
                 string name = System.IO.Path.GetFileName(folder.TrimEnd('\\'));
                 agentChip.Text = "Агент у папці «" + (name.Length > 0 ? name : folder) + "» · " + PermNames[(int)perm];
             }
-            Settings.SetBool("AgentOn", folder != null);
-            Settings.SetInt("AgentPerm", (int)perm);
+            if (persist)
+            {
+                // Останню папку запам'ятовуємо як підказку для нових чатів, а також за цим чатом окремо.
+                if (folder != null) Settings.Set("AgentFolder", folder);
+                Settings.SetBool("AgentOn", folder != null);
+                Settings.SetInt("AgentPerm", (int)perm);
+                SaveChatAgent();
+            }
             folderBtn.Primary = folder != null;
             folderBtn.Outline = folder == null;
             folderBtn.Tip = folder != null ? "Агент увімкнений: " + folder : "Агент: модель працює з файлами в обраній папці";
             folderBtn.Invalidate();
             chatInput.Box.Hint = folder != null ? "Що зробити в папці? Наприклад: «створи сайт-візитку»…" : "Напиши повідомлення…";
             LayoutChat();
+        }
+
+        // ── чернетка й папка окремо для кожного чату ──────────────────────────────
+
+        // Папку обраного чату зберігаємо на диску, щоб вона повернулася, коли відкриєш цей чат знову.
+        void SaveChatAgent()
+        {
+            if (chatId == null) return;
+            Settings.Set("cf:" + chatId, agentFolder ?? "");
+            Settings.SetInt("cp:" + chatId, (int)agentPerm);
+        }
+
+        // Запам'ятати недописане повідомлення й папку поточного чату перед тим, як піти в інший.
+        void StashDraft()
+        {
+            string text = chatInput.Box.Text;
+            if (text.Length == 0 && agentFolder == null) drafts.Remove(draftKey);
+            else drafts[draftKey] = new Draft { Text = text, Folder = agentFolder, Perm = agentPerm };
+        }
+
+        // Показати чернетку й папку чату key (chatId або "" для нового). newChat — чистий новий чат.
+        void LoadDraft(string key, bool newChat)
+        {
+            draftKey = key ?? "";
+            Draft d;
+            string folder; AgentPermission perm;
+            if (drafts.TryGetValue(draftKey, out d))   // є незбережені зміни цього чату в цій сесії
+            {
+                chatInput.Box.Text = d.Text;
+                folder = d.Folder; perm = d.Perm;
+            }
+            else
+            {
+                chatInput.Box.Clear();
+                if (newChat)   // новий чат бере останню папку як підказку
+                {
+                    folder = Settings.GetBool("AgentOn", false) ? Settings.Get("AgentFolder", "") : null;
+                    perm = (AgentPermission)Math.Max(0, Math.Min(2, Settings.GetInt("AgentPerm", 1)));
+                }
+                else            // збережений чат — його власна папка з диска
+                {
+                    folder = Settings.Get("cf:" + key, "");
+                    if (folder.Length == 0) folder = null;
+                    perm = (AgentPermission)Math.Max(0, Math.Min(2, Settings.GetInt("cp:" + key, (int)agentPerm)));
+                }
+            }
+            SetAgent(folder, perm, false);
         }
 
         static void OpenInExplorer(string folder)
@@ -597,9 +657,12 @@ namespace OpenForge
             if (agent != null) agent.Cancel();
             FinishIfDone(true);
             Speaker.Stop();
+            StashDraft();
+            drafts.Remove("");   // попередній новий чат (якщо був) відкидаємо — починаємо чистий
             chatList.Clear();
             SetEditing(null);
             chatId = chatTitle = null;
+            LoadDraft("", true);
             historyList.Selected = null;
             historyList.Invalidate();
             UpdatePanel();
@@ -629,6 +692,7 @@ namespace OpenForge
         {
             if (Busy || id == chatId) return;
             Speaker.Stop();
+            StashDraft();
             string title;
             var msgs = ChatStore.Load(id, out title);
             chatList.Clear();
@@ -638,6 +702,7 @@ namespace OpenForge
             chatList.ScrollToEnd();
             chatId = id;
             chatTitle = title;
+            LoadDraft(id, false);
             historyList.Selected = id;
             historyList.Invalidate();
             sidebar.Selected = -1;
@@ -666,6 +731,8 @@ namespace OpenForge
             if (MessageBox.Show(this, "Видалити чат «" + e.Title + "»? Його не можна буде відновити.", "Open Forge",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
             if (id == chatId) { if (Busy) return; NewChat(); }
+            drafts.Remove(id);
+            Settings.Set("cf:" + id, ""); Settings.Set("cp:" + id, "");
             ChatStore.Delete(id);
             RefreshHistory();
         }
@@ -719,7 +786,13 @@ namespace OpenForge
             chatList.Add(um);
             attach.Clear();
             chatInput.Box.Clear();
-            if (chatId == null) { chatId = ChatStore.NewId(); chatTitle = ChatStore.TitleFrom(text); }
+            if (chatId == null)
+            {
+                chatId = ChatStore.NewId(); chatTitle = ChatStore.TitleFrom(text);
+                drafts.Remove("");   // новий чат отримав id — порожню чернетку нового більше не тримаємо
+                draftKey = chatId;
+                SaveChatAgent();     // папку цього чату прив'язуємо до нього
+            }
             Ask(um);
         }
 
