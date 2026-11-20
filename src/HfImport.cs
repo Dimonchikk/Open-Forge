@@ -12,7 +12,46 @@ namespace OpenForge
 {
     static class HfImport
     {
-        static string Dir { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenForge", "gguf"); } }
+        // Де Ollama тримає моделі (змінна OLLAMA_MODELS, наприклад D:\AI\ollama-models), або стандартна папка.
+        public static string ModelsDir
+        {
+            get
+            {
+                foreach (var t in new[] { EnvironmentVariableTarget.Process, EnvironmentVariableTarget.User, EnvironmentVariableTarget.Machine })
+                {
+                    string v = null;
+                    try { v = Environment.GetEnvironmentVariable("OLLAMA_MODELS", t); } catch { }
+                    if (!string.IsNullOrEmpty(v)) return v.Trim().Trim('"');
+                }
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ollama", "models");
+            }
+        }
+
+        // Тимчасовий файл кладемо на той самий диск, де моделі Ollama (поруч з її папкою), — там зазвичай і є місце.
+        static string Dir
+        {
+            get
+            {
+                try
+                {
+                    string models = ModelsDir;
+                    string parent = Path.GetDirectoryName(models.TrimEnd('\\', '/'));
+                    if (!string.IsNullOrEmpty(parent)) return Path.Combine(parent, "OpenForge-gguf");
+                }
+                catch { }
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenForge", "gguf");
+            }
+        }
+
+        static long FreeOn(string path)
+        {
+            try { return new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))).AvailableFreeSpace; } catch { return long.MaxValue; }
+        }
+
+        static string DriveOf(string path)
+        {
+            try { return Path.GetPathRoot(Path.GetFullPath(path)).TrimEnd('\\'); } catch { return "?"; }
+        }
 
         public static void Run(PullJob job, string url, long bytes)
         {
@@ -22,14 +61,19 @@ namespace OpenForge
                 Directory.CreateDirectory(Dir);
                 string file = Path.Combine(Dir, Path.GetFileName(new Uri(url).AbsolutePath));
 
-                // Місце на диску: сам файл + така сама копія в Ollama.
+                // Місце: тимчасовий файл (докачати решту) + копія в папці моделей Ollama. Якщо це один диск — потрібно двічі.
                 long have = File.Exists(file) ? new FileInfo(file).Length : 0;
-                long need = (bytes - have) + bytes + (512L << 20);
-                long free = new DriveInfo(Path.GetPathRoot(Dir)).AvailableFreeSpace;
-                if (free < need)
+                long tmpNeed = (bytes - have) + (256L << 20), ollNeed = bytes + (256L << 20);
+                string tmpDrive = DriveOf(Dir), ollDrive = DriveOf(ModelsDir);
+                bool same = string.Equals(tmpDrive, ollDrive, StringComparison.OrdinalIgnoreCase);
+                long tmpFree = FreeOn(Dir), ollFree = FreeOn(ModelsDir);
+                if (same ? tmpFree < tmpNeed + ollNeed : tmpFree < tmpNeed || ollFree < ollNeed)
                 {
-                    job.Error = "замало місця на диску: потрібно близько " + (need / 1e9).ToString("0") + " ГБ, вільно " + (free / 1e9).ToString("0") + " ГБ " +
-                                "(файл моделі тимчасово займає місце двічі — поки Ollama його не скопіює)";
+                    job.Error = same
+                        ? "замало місця на диску " + tmpDrive + ": потрібно близько " + ((tmpNeed + ollNeed) / 1e9).ToString("0") + " ГБ, вільно " + (tmpFree / 1e9).ToString("0") +
+                          " ГБ (файл тимчасово займає місце двічі, поки Ollama його не скопіює)"
+                        : tmpFree < tmpNeed ? "замало місця на диску " + tmpDrive + " для тимчасового файлу: потрібно " + (tmpNeed / 1e9).ToString("0") + " ГБ, вільно " + (tmpFree / 1e9).ToString("0") + " ГБ"
+                        : "замало місця на диску " + ollDrive + " (папка моделей Ollama): потрібно " + (ollNeed / 1e9).ToString("0") + " ГБ, вільно " + (ollFree / 1e9).ToString("0") + " ГБ";
                     return;
                 }
 
