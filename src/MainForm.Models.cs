@@ -180,8 +180,13 @@ namespace OpenForge
             if (c == 1) list = list.Where(m => !m.Uncensored);
             if (c == 2) list = list.Where(m => m.Uncensored);
             int fsel = fitSeg.Selected;
+            int hiddenFit = 0;
             if (fsel > 0 && Hardware.Done && Hardware.RamGb > 0)
-                list = list.Where(m => !m.Known || m.FitFor(Hardware.VramGb, Hardware.RamGb) <= (fsel == 1 ? Fit.Slow : fsel == 2 ? Fit.Ok : Fit.Fast));
+            {
+                var before = list.ToList();
+                list = before.Where(m => !m.Known || m.FitFor(Hardware.VramGb, Hardware.RamGb) <= (fsel == 1 ? Fit.Slow : fsel == 2 ? Fit.Ok : Fit.Fast)).ToList();
+                hiddenFit = before.Count - list.Count();
+            }
             if (q.Length > 0)
                 list = list.Where(m => m.Name.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 || m.Id.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0 ||
                                        m.Description.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0);
@@ -215,7 +220,8 @@ namespace OpenForge
                   Hardware.RamGb.ToString("0") + " ГБ RAM";
             string tail = p == 3 ? " · «Зображення» — моделі, що розуміють картинки (малювати їх Ollama не вміє)" :
                 ollamaVersion == null ? " · Ollama не запущена — завантаження почнеться, коли вона запрацює" : " · сила 1–10 — наскільки модель розумна";
-            modelsInfo.Text = pc + tail + " · показано " + shown.Count;
+            modelsInfo.Text = pc + tail + " · показано " + shown.Count +
+                (hiddenFit > 0 ? " · ще " + hiddenFit + " приховано фільтром «" + Fits[fsel] + "»" + (fsel == 1 ? " — на цьому ПК не потягне" : "") : "");
             modelList.Invalidate();
             modelsHost.Rearrange();
         }
