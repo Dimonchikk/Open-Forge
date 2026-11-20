@@ -150,7 +150,8 @@ namespace OpenForge
         void RefreshModelsPage()
         {
             if (modelList == null) return;
-            var installed = new HashSet<string>(models.Select(m => m.Name), StringComparer.OrdinalIgnoreCase);
+            // «модель:latest» в Ollama — це та сама «модель» з каталогу (так з'являються й моделі з Hugging Face).
+            var installed = new HashSet<string>(models.Select(m => Catalog.NoLatest(m.Name)), StringComparer.OrdinalIgnoreCase);
             var all = new List<CatalogModel>();
             foreach (var m in Catalog.All) { m.Installed = installed.Contains(m.Id); all.Add(m); }
             // Встановлені моделі, яких немає в каталозі, теж показуємо (без оцінки, чи піде).
