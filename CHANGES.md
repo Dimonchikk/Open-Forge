@@ -1,5 +1,9 @@
 # Зміни Open Forge
 
+## 2.12.7
+
+- Qwen 3.8 27B NEO Coder Max: точний розмір з Hugging Face (18,0 ГБ) і легша версія IQ3_M (14,1 ГБ) для ПК з меншою пам'яттю
+
 ## 2.12.6
 
 - У каталог додано **Qwen 3.8 27B NEO Coder Max (Heretic)** від DavidAU: Qwen 3.8 27B без цензури, налаштована на код. Завантажується прямо з Hugging Face
