@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/icon.png" width="120" alt="Open Forge">
+<img src="https://raw.githubusercontent.com/Dimonchikk/Open-Forge/main/assets/icon.png" width="120" alt="Open Forge">
 
 # Open Forge
 
@@ -23,8 +23,8 @@
 <hr>
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/chat_dark.webp">
-  <img src="docs/img/chat_light.webp" width="820" alt="Open Forge — чат">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Dimonchikk/Open-Forge/main/docs/img/chat_dark.webp">
+  <img src="https://raw.githubusercontent.com/Dimonchikk/Open-Forge/main/docs/img/chat_light.webp" width="820" alt="Open Forge — чат">
 </picture>
 
 </div>
