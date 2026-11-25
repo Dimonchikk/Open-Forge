@@ -1,26 +1,51 @@
-# ⚒ Open Forge
+<div align="center">
 
-Локальні нейромережі на твоєму ПК: Windows-застосунок поверх [Ollama](https://ollama.com).
-Сайт: https://dimonchikk.github.io/Open-Forge/
+<img src="assets/icon.png" width="120" alt="Open Forge">
 
-## Можливості (2.7)
+# Open Forge
 
-- 🖼 **Фото, скріншоти й файли** в чаті: PDF, Word, текст і код (кнопка, Ctrl+V, перетягування)
-- 💭 **Думки моделі** в рядку «Думав 12 с», редагування й видалення повідомлень, «Ще раз»
-- 📝 Відповіді з таблицями, заголовками й списками, «Переглянути» для HTML і сайтів агента
-- 💬 **Чат** зі стрімінгом: вікно не зависає, блоки коду з «Копіювати», виділення тексту мишею
-- 🗂 **Історія чатів** з пошуком у боковому меню, 🔊 **«Слухати»** (озвучка відповідей)
-- 🤖 **Агент**: модель створює файли, запускає команди й програми та робить скріншоти результату в обраній папці (3 рівні дозволів)
+<hr>
+
+**Нейромережі прямо на твоєму ПК.**<br>
+Чат, агент, що сам пише й тестує проєкти, порівняння моделей і каталог з 134 моделей —<br>
+у звичайному Windows-застосунку поверх [Ollama](https://ollama.com). Без хмари, без підписок, без інтернету після завантаження моделі.
+
+[![Build](https://img.shields.io/github/actions/workflow/status/Dimonchikk/Open-Forge/build.yml?label=Build&logo=github)](https://github.com/Dimonchikk/Open-Forge/actions)
+[![Release](https://img.shields.io/github/v/release/Dimonchikk/Open-Forge?label=Release&color=7c3aed)](https://github.com/Dimonchikk/Open-Forge/releases/latest)
+[![License](https://img.shields.io/badge/License-MIT-3fb950)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078d4?logo=windows&logoColor=white)](https://github.com/Dimonchikk/Open-Forge/releases/latest)
+[![.NET Framework](https://img.shields.io/badge/.NET%20Framework-4-512bd4?logo=dotnet&logoColor=white)](#як-зібрати)
+[![Ollama](https://img.shields.io/badge/Ollama-0.4%2B-111111?logo=ollama&logoColor=white)](https://ollama.com)
+[![Models](https://img.shields.io/badge/Моделей-134-f97316)](#можливості)
+
+### [⬇️ Завантажити останню версію](https://github.com/Dimonchikk/Open-Forge/releases/latest) · [Можливості](#можливості) · [Як зібрати](#як-зібрати) · [Сайт](https://dimonchikk.github.io/Open-Forge/) · [Що нового](CHANGES.md)
+
+<hr>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/chat_dark.webp">
+  <img src="docs/img/chat_light.webp" width="820" alt="Open Forge — чат">
+</picture>
+
+</div>
+
+## Можливості
+
+- 💬 **Чат** зі стрімінгом, таблицями, кодом і «Думками моделі». Повідомлення можна редагувати, видаляти й перегенерувати, а відповіді — слухати вголос
+- 🖼 **Фото, скріншоти й файли**: PDF, Word, текст і код (кнопка, Ctrl+V або перетягування)
+- 🤖 **Агент у папці**: модель сама створює файли, запускає команди й програми, натискає кнопки у вікнах і фотографує кожен крок. Перевіряє, що проєкт повний і запускається, а не здає «зразок»
+- 📋 **Бічна панель «Прогрес»** як у Claude: кроки, створені файли, скріншоти, модель і пам'ять розмови
 - ⚖️ **Порівняння** до трьох моделей поруч
-- 📦 **Каталог із 134 моделі (зокрема Qwen 3.8)**: чат, код, зображення, міркування, переклад, швидкі — звичайні й без цензури, пошук
-- ✅ **Підбір під ПК**: позначка, чи модель влазить у відеопам'ять
-- ⬇️ Завантаження й видалення моделей в один клік
-- 📝 Інструкція для моделі (системний промпт)
+- 📦 **Каталог із 134 моделей**: чат, код, зображення, міркування, переклад, швидкі — звичайні й без цензури. Сила 1–10 і позначка, чи потягне твій ПК
+- 🤗 **Hugging Face**: моделі, які Ollama не завантажує сама, Open Forge качає й додає в Ollama сам (з докачуванням)
+- 🔌 **Пристрої**: телефони Android і iPhone, плати ESP32, Arduino, Raspberry Pi Pico, STM32 — з режимом і COM-портом
+- ⏻ **Кнопка Ollama**: запустити, перезапустити або зупинити Ollama прямо з програми
+- 🗂 **Історія чатів** з пошуком; чернетка й папка агента — окремі для кожного чату
 - 🎨 Світла й темна тема, як у Windows
 
 ## Як зібрати
 
-Код — C# 5 / .NET Framework 4 / WinForms, без сторонніх бібліотек (архітектура як у «Тихому ПК»).
+Код — C# 5 / .NET Framework 4 / WinForms, без сторонніх бібліотек.
 
 - Локально на Windows: подвійний клік по `src/build.bat` — з'являться `src/OpenForge.exe` і `src/OpenForge-setup.exe`.
 - На GitHub: Actions → «Збирання» → «Run workflow». З номером версії створюється чернетка релізу з `CHANGES.md`.
@@ -31,4 +56,4 @@
 
 ## Ліцензія
 
-MIT
+[MIT](LICENSE)
